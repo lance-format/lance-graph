@@ -21,7 +21,7 @@ def test_build_graph_config_from_mapping_supports_simple_nodes():
         .execute({"Person": table})
         .to_pydict()
     )
-    assert data["person_id"] == [1, 2]
+    assert data["id"] == [1, 2]
 
 
 def test_build_graph_config_from_mapping_requires_id_field():

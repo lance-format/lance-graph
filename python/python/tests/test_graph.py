@@ -69,18 +69,9 @@ def test_basic_node_selection(graph_env, execute_method):
     result = getattr(query, execute_method)({"Person": datasets["Person"]})
     data = result.to_pydict()
 
-    # TODO: remove this if/else statements when the execute() also returns
-    # Cypher dot notation
-    if execute_method == "execute":
-        # execute() returns unqualified names for simple queries
-        assert set(data.keys()) == {"name", "age"}
-        assert len(data["name"]) == 4
-        assert "Alice" in set(data["name"])
-    else:
-        # execute_datafusion() returns Cypher dot notation
-        assert set(data.keys()) == {"p.name", "p.age"}
-        assert len(data["p.name"]) == 4
-        assert "Alice" in set(data["p.name"])
+    assert set(data.keys()) == {"p.name", "p.age"}
+    assert len(data["p.name"]) == 4
+    assert "Alice" in set(data["p.name"])
 
 
 @pytest.mark.parametrize("execute_method", ["execute", "execute_datafusion"])
@@ -92,14 +83,9 @@ def test_filtered_query(graph_env, execute_method):
     result = getattr(query, execute_method)({"Person": datasets["Person"]})
     data = result.to_pydict()
 
-    if execute_method == "execute":
-        assert len(data["name"]) == 2
-        assert set(data["name"]) == {"Bob", "David"}
-        assert all(age > 30 for age in data["age"])
-    else:
-        assert len(data["p.name"]) == 2
-        assert set(data["p.name"]) == {"Bob", "David"}
-        assert all(age > 30 for age in data["p.age"])
+    assert len(data["p.name"]) == 2
+    assert set(data["p.name"]) == {"Bob", "David"}
+    assert all(age > 30 for age in data["p.age"])
 
 
 @pytest.mark.parametrize("execute_method", ["execute", "execute_datafusion"])
@@ -209,11 +195,5 @@ def test_distinct_clause(graph_env, execute_method):
     )
     data = result.to_pydict()
 
-    if execute_method == "execute":
-        # execute() returns qualified column names for relationship queries
-        assert len(data["c__company_name"]) == 3
-        assert set(data["c__company_name"]) == {"TechCorp", "DataInc", "CloudSoft"}
-    else:
-        # execute_datafusion() returns Cypher dot notation
-        assert len(data["c.company_name"]) == 3
-        assert set(data["c.company_name"]) == {"TechCorp", "DataInc", "CloudSoft"}
+    assert len(data["c.company_name"]) == 3
+    assert set(data["c.company_name"]) == {"TechCorp", "DataInc", "CloudSoft"}
