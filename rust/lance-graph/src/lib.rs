@@ -53,4 +53,4 @@ pub const MAX_VARIABLE_LENGTH_HOPS: u32 = 20;
 
 pub use config::{GraphConfig, NodeMapping, RelationshipMapping};
 pub use error::{GraphError, Result};
-pub use query::CypherQuery;
+pub use query::{CypherQuery, ExecutionStrategy};

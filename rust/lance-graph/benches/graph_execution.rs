@@ -22,7 +22,7 @@ use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use futures::TryStreamExt;
 use lance::dataset::{Dataset, WriteMode, WriteParams};
-use lance_graph::{CypherQuery, GraphConfig};
+use lance_graph::{CypherQuery, ExecutionStrategy, GraphConfig};
 use tempfile::TempDir;
 
 fn create_people_batch() -> RecordBatch {
@@ -71,7 +71,11 @@ fn execute_cypher_query(
     q: &CypherQuery,
     datasets: HashMap<String, RecordBatch>,
 ) -> RecordBatch {
-    rt.block_on(async move { q.execute(datasets).await.unwrap() })
+    rt.block_on(async move {
+        q.execute(datasets, Some(ExecutionStrategy::Simple))
+            .await
+            .unwrap()
+    })
 }
 
 fn make_people_batch(n: usize) -> RecordBatch {

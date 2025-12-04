@@ -17,6 +17,23 @@ mod clauses;
 mod expr;
 mod simple_executor;
 
+/// Execution strategy for Cypher queries
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionStrategy {
+    /// Use DataFusion query planner (default, full feature support)
+    DataFusion,
+    /// Use simple single-table executor (legacy, limited features)
+    Simple,
+    /// Use Lance native executor (not yet implemented)
+    LanceNative,
+}
+
+impl Default for ExecutionStrategy {
+    fn default() -> Self {
+        Self::DataFusion
+    }
+}
+
 /// A Cypher query that can be executed against Lance datasets
 #[derive(Debug, Clone)]
 pub struct CypherQuery {
@@ -90,6 +107,68 @@ impl CypherQuery {
             message: "Graph configuration is required for query execution".to_string(),
             location: snafu::Location::new(file!(), line!(), column!()),
         })
+    }
+
+    /// Execute the query against provided in-memory datasets
+    ///
+    /// This method uses the DataFusion planner by default for comprehensive query support
+    /// including joins, aggregations, and complex patterns. You can optionally specify
+    /// a different execution strategy.
+    ///
+    /// # Arguments
+    /// * `datasets` - HashMap of table name to RecordBatch (nodes and relationships)
+    /// * `strategy` - Optional execution strategy (defaults to DataFusion)
+    ///
+    /// # Returns
+    /// A single RecordBatch containing the query results
+    ///
+    /// # Errors
+    /// Returns error if query parsing, planning, or execution fails
+    ///
+    /// # Example
+    /// ```ignore
+    /// use std::collections::HashMap;
+    /// use arrow::record_batch::RecordBatch;
+    /// use lance_graph::query::CypherQuery;
+    ///
+    /// // Create in-memory datasets
+    /// let mut datasets = HashMap::new();
+    /// datasets.insert("Person".to_string(), person_batch);
+    /// datasets.insert("KNOWS".to_string(), knows_batch);
+    ///
+    /// // Parse and execute query
+    /// let query = CypherQuery::parse("MATCH (p:Person)-[:KNOWS]->(f) RETURN p.name, f.name")?
+    ///     .with_config(config);
+    /// // Use the default DataFusion strategy
+    /// let result = query.execute(datasets, None).await?;
+    /// // Use the Simple strategy explicitly
+    /// let result = query.execute(datasets, Some(ExecutionStrategy::Simple)).await?;
+    /// ```
+    pub async fn execute(
+        &self,
+        datasets: HashMap<String, arrow::record_batch::RecordBatch>,
+        strategy: Option<ExecutionStrategy>,
+    ) -> Result<arrow::record_batch::RecordBatch> {
+        let strategy = strategy.unwrap_or_default();
+        match strategy {
+            ExecutionStrategy::DataFusion => self.execute_datafusion(datasets).await,
+            ExecutionStrategy::Simple => self.execute_simple(datasets).await,
+            ExecutionStrategy::LanceNative => Err(GraphError::UnsupportedFeature {
+                feature: "Lance native execution strategy is not yet implemented".to_string(),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            }),
+        }
+    }
+
+    /// Explain the query execution plan using the DataFusion planner
+    ///
+    /// This method provides a high-level overview of the query execution plan
+    /// using the DataFusion planner, which is useful for debugging and optimization.
+    pub async fn explain(
+        &self,
+        datasets: HashMap<String, arrow::record_batch::RecordBatch>,
+    ) -> Result<String> {
+        self.explain_datafusion(datasets).await
     }
 
     /// Execute using the DataFusion planner with in-memory datasets
@@ -599,30 +678,6 @@ impl CypherQuery {
         output.push('\n');
 
         Ok(output)
-    }
-
-    /// Execute the query against provided in-memory datasets using the DataFusion planner
-    ///
-    /// This is the primary execution method that uses the full DataFusion-based planner
-    /// for comprehensive query support including joins, aggregations, and complex patterns.
-    ///
-    /// For legacy single-table queries, use `execute_simple()` instead.
-    pub async fn execute(
-        &self,
-        datasets: HashMap<String, arrow::record_batch::RecordBatch>,
-    ) -> Result<arrow::record_batch::RecordBatch> {
-        self.execute_datafusion(datasets).await
-    }
-
-    /// Explain the query execution plan using the DataFusion planner
-    ///
-    /// This method provides a high-level overview of the query execution plan
-    /// using the DataFusion planner, which is useful for debugging and optimization.
-    pub async fn explain(
-        &self,
-        datasets: HashMap<String, arrow::record_batch::RecordBatch>,
-    ) -> Result<String> {
-        self.explain_datafusion(datasets).await
     }
 
     /// Execute simple single-table queries (legacy implementation)
