@@ -1,7 +1,7 @@
 use arrow_array::{Array, Float64Array, Int64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use lance_graph::config::GraphConfig;
-use lance_graph::query::CypherQuery;
+use lance_graph::{CypherQuery, ExecutionStrategy};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -127,7 +127,10 @@ async fn execute_test_query(cypher: &str) -> RecordBatch {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    query.execute_datafusion(datasets).await.unwrap()
+    query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap()
 }
 
 // Helper function to extract string column values
@@ -158,7 +161,10 @@ async fn test_datafusion_simple_node_scan() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return all 5 people
     assert_eq!(result.num_rows(), 5);
@@ -192,7 +198,10 @@ async fn test_datafusion_node_filtering() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return 3 people (Bob:35, David:40, Charlie:30 is not > 30)
     assert_eq!(result.num_rows(), 2);
@@ -235,7 +244,10 @@ async fn test_datafusion_multiple_conditions() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return people with age >= 30
     // Bob:35, Charlie:30, David:40
@@ -275,7 +287,10 @@ async fn test_datafusion_relationship_traversal() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return source names for all relationships
     assert_eq!(result.num_rows(), 5); // 5 relationships in the dataset
@@ -319,7 +334,10 @@ async fn test_datafusion_relationship_with_variable() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_columns(), 1);
     assert_eq!(result.num_rows(), 5);
@@ -360,7 +378,10 @@ async fn test_datafusion_complex_filtering() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_columns(), 1);
     // Only Bob (35) -> Charlie (30), David doesn't connect to anyone age 30
@@ -388,7 +409,10 @@ async fn test_datafusion_projection_multiple_properties() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return people with age >= 28 (Bob:35, Charlie:30, Eve:28, David:40)
     assert_eq!(result.num_rows(), 4);
@@ -425,7 +449,9 @@ async fn test_datafusion_error_handling_missing_config() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await;
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await;
     assert!(result.is_err());
 
     let error_msg = format!("{:?}", result.unwrap_err());
@@ -442,7 +468,9 @@ async fn test_datafusion_error_handling_empty_datasets() {
 
     let datasets = HashMap::new(); // Empty datasets
 
-    let result = query.execute_datafusion(datasets).await;
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await;
     assert!(result.is_err());
 
     let error_msg = format!("{:?}", result.unwrap_err());
@@ -483,7 +511,10 @@ async fn test_datafusion_performance_large_dataset() {
     datasets.insert("Person".to_string(), large_batch);
 
     let start = std::time::Instant::now();
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
     let duration = start.elapsed();
 
     // Should complete reasonably quickly (adjust threshold as needed)
@@ -514,7 +545,10 @@ async fn test_datafusion_empty_result_set() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return empty result set
     assert_eq!(result.num_rows(), 0);
@@ -536,7 +570,10 @@ async fn test_datafusion_all_columns_projection() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return Alice's data
     assert_eq!(result.num_rows(), 1);
@@ -585,7 +622,10 @@ async fn test_datafusion_relationship_count() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return 5 relationships (as per create_knows_dataset)
     assert_eq!(result.num_rows(), 5);
@@ -630,7 +670,10 @@ async fn test_datafusion_one_hop_source_names_strict() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
     assert_eq!(out.num_columns(), 1);
     assert_eq!(out.num_rows(), 5);
 
@@ -667,7 +710,10 @@ async fn test_datafusion_one_hop_filtered_source_age_strict() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
     assert_eq!(out.num_columns(), 1);
     // Bob (35): 2->3, David (40): 4->5
     assert_eq!(out.num_rows(), 2);
@@ -704,7 +750,10 @@ async fn test_datafusion_one_hop_with_city_filter() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Only Eve has city = 'Seattle' and is reachable (David->Eve)
     assert_eq!(out.num_rows(), 1);
@@ -735,7 +784,10 @@ async fn test_datafusion_one_hop_multiple_properties() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_columns(), 4);
     assert_eq!(out.num_rows(), 5);
@@ -785,7 +837,10 @@ async fn test_datafusion_one_hop_return_relationship_properties() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return 3 columns: a.name, r.since_year, b.name
     assert_eq!(out.num_columns(), 3);
@@ -880,7 +935,10 @@ async fn test_datafusion_two_hop_return_intermediate() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
     assert_eq!(out.num_columns(), 1);
     assert_eq!(out.num_rows(), 4);
 
@@ -918,7 +976,10 @@ async fn test_datafusion_two_hop_return_all_three() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
     assert_eq!(out.num_columns(), 3);
     assert_eq!(out.num_rows(), 4);
 
@@ -988,7 +1049,10 @@ async fn test_datafusion_two_hop_with_filter() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Filter: b.age > 30 means b can be Bob(35), David(40)
     // Paths with Bob as intermediate: 1->2->3 (Alice->Bob->Charlie)
@@ -1027,7 +1091,10 @@ async fn test_datafusion_two_hop_with_relationship_variable() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
     assert_eq!(out.num_columns(), 2);
     assert_eq!(out.num_rows(), 4);
 
@@ -1107,7 +1174,10 @@ async fn test_datafusion_two_hop_with_multiple_filters() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // a.age < 30: Alice(25), Eve(28)
     // b.age >= 30: Bob(35), Charlie(30), David(40)
@@ -1173,7 +1243,10 @@ async fn test_datafusion_two_hop_return_relationship_properties() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
     assert_eq!(out.num_columns(), 2);
     // Only Alice->Bob->Charlie (Alice-[2020]->Bob-[2019]->Charlie)
     assert_eq!(out.num_rows(), 1);
@@ -1212,7 +1285,10 @@ async fn test_datafusion_two_hop_return_both_relationship_properties() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return 5 columns: a.name, r1.since_year, b.name, r2.since_year, c.name
     assert_eq!(out.num_columns(), 5);
@@ -1284,7 +1360,10 @@ async fn test_datafusion_two_hop_with_limit() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return only 2 rows (limited from 4 total paths)
     assert_eq!(out.num_rows(), 2);
@@ -1309,7 +1388,10 @@ async fn test_datafusion_complex_boolean_expression() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Matches:
     // - Bob(35)->Charlie(30): age > 30 AND age < 35
@@ -1357,7 +1439,10 @@ async fn test_datafusion_two_hop_same_intermediate_node() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Paths through Charlie: Bob->Charlie->David, Alice->Charlie->David
     assert_eq!(out.num_rows(), 2);
@@ -1435,7 +1520,10 @@ async fn test_datafusion_two_hop_count_paths_per_source() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Alice's two-hop paths: Alice->Bob->Charlie, Alice->Charlie->David
     assert_eq!(out.num_rows(), 2);
@@ -1473,7 +1561,10 @@ async fn test_datafusion_filter_on_both_nodes_and_edges() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // a: age 25-30 = Alice(25), Charlie(30), Eve(28)
     // b: age > 30 = Bob(35), David(40)
@@ -1518,7 +1609,10 @@ async fn test_datafusion_distinct_with_two_hop() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Sources with two-hop paths: Alice, Bob, Charlie
     assert_eq!(out.num_rows(), 3);
@@ -1573,7 +1667,10 @@ async fn test_datafusion_order_by_single_column_asc() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_rows(), 5);
 
@@ -1604,7 +1701,10 @@ async fn test_datafusion_order_by_single_column_desc() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_rows(), 5);
 
@@ -1642,7 +1742,10 @@ async fn test_datafusion_order_by_multiple_columns() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_rows(), 5);
 
@@ -1675,7 +1778,10 @@ async fn test_datafusion_order_by_with_limit() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should only return 3 rows
     assert_eq!(out.num_rows(), 3);
@@ -1710,7 +1816,10 @@ async fn test_datafusion_order_by_with_filter() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Age >= 30: Bob(35), Charlie(30), David(40)
     assert_eq!(out.num_rows(), 3);
@@ -1744,7 +1853,10 @@ async fn test_datafusion_order_by_relationship_query() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_rows(), 5);
 
@@ -1780,7 +1892,10 @@ async fn test_datafusion_order_by_two_hop_query() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_rows(), 4);
 
@@ -1831,7 +1946,10 @@ async fn test_datafusion_return_with_single_alias() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_rows(), 5);
 
@@ -1862,7 +1980,10 @@ async fn test_datafusion_return_with_multiple_aliases() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Age > 30: Bob(35), Charlie(30 - excluded), David(40)
     assert_eq!(out.num_rows(), 2);
@@ -1903,7 +2024,10 @@ async fn test_datafusion_return_mixed_with_and_without_alias() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_rows(), 3);
 
@@ -1934,7 +2058,10 @@ async fn test_datafusion_return_alias_with_relationship() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_rows(), 3);
 
@@ -1973,7 +2100,10 @@ async fn test_datafusion_return_alias_with_order_by() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_rows(), 2);
 
@@ -2011,7 +2141,10 @@ async fn test_datafusion_varlength_single_hop() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Same as single-hop: Alice→Bob, Alice→Charlie, Bob→Charlie, Charlie→David, David→Eve
     assert_eq!(out.num_rows(), 5);
@@ -2048,7 +2181,10 @@ async fn test_datafusion_varlength_two_hops() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // 2-hop paths: Alice→Bob→Charlie, Alice→Charlie→David, Bob→Charlie→David, Charlie→David→Eve
     assert_eq!(out.num_rows(), 4);
@@ -2098,7 +2234,10 @@ async fn test_datafusion_varlength_one_to_two_hops() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Alice 1-hop: Bob, Charlie
     // Alice 2-hop: Charlie (via Bob), David (via Charlie)
@@ -2138,7 +2277,10 @@ async fn test_datafusion_varlength_with_filter() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Only paths ending at David (age 40)
     // Alice→Bob→David, Bob→David
@@ -2168,7 +2310,10 @@ async fn test_datafusion_varlength_with_order_by() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_rows(), 4);
 
@@ -2204,7 +2349,10 @@ async fn test_datafusion_varlength_with_limit() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should limit to 3 results
     assert_eq!(out.num_rows(), 3);
@@ -2228,7 +2376,10 @@ async fn test_datafusion_varlength_with_distinct() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Alice reaches: Bob, Charlie, David (3 distinct people within 2 hops)
     assert_eq!(out.num_rows(), 3);
@@ -2265,7 +2416,10 @@ async fn test_datafusion_varlength_three_hops() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Alice 3-hop: Alice→Bob→Charlie→David, Alice→Charlie→David→Eve
     assert_eq!(out.num_rows(), 2);
@@ -2302,7 +2456,10 @@ async fn test_datafusion_varlength_no_results() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Eve has no outgoing KNOWS relationships
     assert_eq!(out.num_rows(), 0);
@@ -2327,7 +2484,10 @@ async fn test_datafusion_varlength_with_source_filter() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     let sources = out
         .column(0)
@@ -2361,7 +2521,10 @@ async fn test_datafusion_varlength_return_source_and_target() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // 2-hop paths: Alice→Bob→Charlie, Alice→Charlie→David, Bob→Charlie→David, Charlie→David→Eve
     assert_eq!(out.num_rows(), 4);
@@ -2409,7 +2572,10 @@ async fn test_datafusion_varlength_count() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Alice can reach 4 people within 2 hops
     assert_eq!(out.num_rows(), 4);
@@ -2434,7 +2600,10 @@ async fn test_count_star_all_nodes() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     let count_col = result
@@ -2461,7 +2630,10 @@ async fn test_count_variable() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     let count_col = result
@@ -2490,7 +2662,10 @@ async fn test_count_with_filter() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     let count_col = result
@@ -2518,7 +2693,10 @@ async fn test_count_property() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     let count_col = result
@@ -2546,7 +2724,10 @@ async fn test_count_with_grouping() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should have 4 groups: NULL (David), Chicago, New York, San Francisco, Seattle
     assert_eq!(result.num_rows(), 5);
@@ -2600,7 +2781,10 @@ async fn test_count_without_alias_has_descriptive_name() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     // Should have column named "count(*)" not "expr" or "count"
@@ -2627,7 +2811,10 @@ async fn test_count_property_without_alias_has_descriptive_name() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     // Should have column named "count(p.name)" not "expr"
@@ -2654,7 +2841,10 @@ async fn test_sum_property() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     let sum_col = result
@@ -2683,7 +2873,10 @@ async fn test_sum_with_filter() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     let sum_col = result
@@ -2712,7 +2905,10 @@ async fn test_sum_with_grouping() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should have 5 groups: NULL, Chicago, New York, San Francisco, Seattle
     assert_eq!(result.num_rows(), 5);
@@ -2763,7 +2959,10 @@ async fn test_sum_without_alias_has_descriptive_name() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     // Should have column named "sum(p.age)" not "expr"
@@ -2790,7 +2989,10 @@ async fn test_avg_property() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     let avg_col = result
@@ -2819,7 +3021,10 @@ async fn test_avg_with_filter() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     let avg_col = result
@@ -2849,7 +3054,10 @@ async fn test_avg_with_grouping() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should have 5 groups: NULL, Chicago, New York, San Francisco, Seattle
     assert_eq!(result.num_rows(), 5);
@@ -2900,7 +3108,10 @@ async fn test_avg_without_alias_has_descriptive_name() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     // Should have column named "avg(p.age)" not "expr"
@@ -2932,7 +3143,10 @@ async fn test_datafusion_disconnected_patterns_cross_join() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return Alice and Bob
     assert_eq!(result.num_rows(), 1);
@@ -2969,7 +3183,10 @@ async fn test_datafusion_disconnected_patterns_multiple_results() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // a.age > 30: Bob(35), David(40) = 2 people
     // b.age < 30: Alice(25), Eve(28) = 2 people
@@ -3021,7 +3238,10 @@ async fn test_datafusion_mixed_connected_and_disconnected() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // 5 KNOWS relationships * 1 person with age=25 (Alice) = 5 rows
     assert_eq!(result.num_rows(), 5);
@@ -3054,7 +3274,10 @@ async fn test_datafusion_disconnected_with_distinct() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // IDs: 1,2,3,4,5
     // Pairs where a.id < b.id: (1,2), (1,3), (1,4), (1,5), (2,3), (2,4), (2,5), (3,4), (3,5), (4,5)
@@ -3096,7 +3319,10 @@ async fn test_datafusion_shared_node_variable_join() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // This is a two-hop path query that should use join key inference on 'b'
     // Alice(1) -> Bob(2) -> Charlie(3)
@@ -3152,7 +3378,10 @@ async fn test_datafusion_shared_variable_with_filter() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should successfully execute with join key inference + filters
     assert!(result.num_rows() > 0, "Should have results with filters");
@@ -3188,7 +3417,10 @@ async fn test_datafusion_multiple_shared_variables() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // This is a three-hop path query using join key inference on 'b' and 'c'
     // Should successfully execute (may have 0 or more results depending on data)
@@ -3212,7 +3444,10 @@ async fn test_datafusion_shared_variable_distinct() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should return distinct intermediate nodes that have both incoming and outgoing KNOWS edges
     assert!(result.num_rows() > 0, "Should have intermediate nodes");
@@ -3247,7 +3482,10 @@ async fn test_datafusion_is_null_node_property() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     assert_eq!(result.num_columns(), 1);
@@ -3272,7 +3510,10 @@ async fn test_datafusion_is_not_null_node_property() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 4);
     assert_eq!(result.num_columns(), 1);
@@ -3311,7 +3552,10 @@ async fn test_datafusion_is_null_relationship_property() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 1);
     assert_eq!(result.num_columns(), 2);
@@ -3349,7 +3593,10 @@ async fn test_datafusion_is_not_null_relationship_property() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let result = query.execute_datafusion(datasets).await.unwrap();
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(result.num_rows(), 4);
 

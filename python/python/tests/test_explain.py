@@ -1,4 +1,4 @@
-"""Tests for explain_datafusion API."""
+"""Tests for explain API."""
 
 import pyarrow as pa
 import pytest
@@ -25,7 +25,7 @@ def test_explain_simple_query(person_data):
     """Test explain output contains all expected sections."""
     config, people = person_data
     query = CypherQuery("MATCH (p:Person) RETURN p.name, p.age").with_config(config)
-    plan = query.explain_datafusion({"Person": people})
+    plan = query.explain({"Person": people})
 
     # Verify the plan is a non-empty string
     assert isinstance(plan, str)
@@ -48,7 +48,7 @@ def test_explain_with_clauses(person_data):
     query = CypherQuery(
         "MATCH (p:Person) WHERE p.age > 30 RETURN p.name ORDER BY p.age LIMIT 2"
     ).with_config(config)
-    plan = query.explain_datafusion({"Person": people})
+    plan = query.explain({"Person": people})
 
     assert isinstance(plan, str)
     assert "WHERE p.age > 30" in plan
@@ -63,11 +63,11 @@ def test_explain_error_handling(person_data):
     # Missing config
     query_no_config = CypherQuery("MATCH (p:Person) RETURN p.name")
     with pytest.raises(ValueError, match="Graph configuration is required"):
-        query_no_config.explain_datafusion({"Person": people})
+        query_no_config.explain({"Person": people})
 
     # Missing datasets
     query_with_config = CypherQuery("MATCH (p:Person) RETURN p.name").with_config(
         config
     )
     with pytest.raises(ValueError, match="No input datasets provided"):
-        query_with_config.explain_datafusion({})
+        query_with_config.explain({})

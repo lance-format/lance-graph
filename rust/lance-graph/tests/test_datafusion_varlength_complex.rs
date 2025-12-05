@@ -1,7 +1,7 @@
 use arrow_array::{Int64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use lance_graph::config::GraphConfig;
-use lance_graph::query::CypherQuery;
+use lance_graph::{CypherQuery, ExecutionStrategy};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -161,7 +161,10 @@ async fn test_varlength_multiple_paths_to_target() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should find multiple paths to Jack
     assert!(out.num_rows() > 0, "Should find at least one path to Jack");
@@ -186,7 +189,10 @@ async fn test_varlength_shortest_path_length() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should find 3-hop paths
     assert!(out.num_rows() >= 1, "Should find at least one 3-hop path");
@@ -211,7 +217,10 @@ async fn test_varlength_with_cycle() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     let names = out
         .column(0)
@@ -249,7 +258,10 @@ async fn test_varlength_reachability_analysis() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Alice can reach many people within 3 hops
     assert!(
@@ -277,7 +289,10 @@ async fn test_varlength_diamond_pattern() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should find multiple 2-hop paths to Diana
     // Alice->Bob->Diana, Alice->Charlie->Diana, plus potentially others
@@ -306,7 +321,7 @@ async fn test_varlength_with_and_without_distinct() {
     datasets1.insert("Person".to_string(), person_batch.clone());
     datasets1.insert("KNOWS".to_string(), knows_batch.clone());
 
-    let out_all = query_all_paths.execute_datafusion(datasets1).await.unwrap();
+    let out_all = query_all_paths.execute(datasets1, None).await.unwrap();
 
     // Query WITH DISTINCT - returns unique endpoints only
     let query_distinct = CypherQuery::new(
@@ -320,7 +335,7 @@ async fn test_varlength_with_and_without_distinct() {
     datasets2.insert("Person".to_string(), person_batch);
     datasets2.insert("KNOWS".to_string(), knows_batch);
 
-    let out_distinct = query_distinct.execute_datafusion(datasets2).await.unwrap();
+    let out_distinct = query_distinct.execute(datasets2, None).await.unwrap();
 
     // Note: Due to how variable-length paths are implemented with UNION,
     // DISTINCT may not fully deduplicate across all branches if intermediate
@@ -360,7 +375,10 @@ async fn test_varlength_distinct_reduces_duplicates() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should find multiple people reachable in 2 hops
     assert!(
@@ -405,7 +423,7 @@ async fn test_varlength_count_paths_vs_endpoints() {
     datasets1.insert("Person".to_string(), person_batch.clone());
     datasets1.insert("KNOWS".to_string(), knows_batch.clone());
 
-    let out_paths = query_paths.execute_datafusion(datasets1).await.unwrap();
+    let out_paths = query_paths.execute(datasets1, None).await.unwrap();
 
     // Count unique endpoints (with DISTINCT)
     let query_endpoints = CypherQuery::new(
@@ -419,7 +437,7 @@ async fn test_varlength_count_paths_vs_endpoints() {
     datasets2.insert("Person".to_string(), person_batch);
     datasets2.insert("KNOWS".to_string(), knows_batch);
 
-    let out_endpoints = query_endpoints.execute_datafusion(datasets2).await.unwrap();
+    let out_endpoints = query_endpoints.execute(datasets2, None).await.unwrap();
 
     // Total paths should be >= unique endpoints
     assert!(
@@ -458,7 +476,10 @@ async fn test_varlength_same_department() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     let names = out
         .column(0)
@@ -495,7 +516,10 @@ async fn test_varlength_cross_department_connections() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should find Marketing people reachable from Engineering
     assert!(
@@ -524,7 +548,10 @@ async fn test_varlength_age_filter() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     let ages = out.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
 
@@ -554,7 +581,10 @@ async fn test_varlength_age_range() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     let ages = out.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
 
@@ -584,7 +614,10 @@ async fn test_varlength_convergence_to_hub() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Multiple people should reach Jack in 2 hops
     assert!(
@@ -612,7 +645,10 @@ async fn test_varlength_divergence_from_source() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Bob knows multiple people directly
     assert!(
@@ -645,7 +681,10 @@ async fn test_varlength_increasing_reach() {
         datasets.insert("Person".to_string(), person_batch.clone());
         datasets.insert("KNOWS".to_string(), knows_batch.clone());
 
-        let out = query.execute_datafusion(datasets).await.unwrap();
+        let out = query
+            .execute(datasets, Some(ExecutionStrategy::DataFusion))
+            .await
+            .unwrap();
         let current_count = out.num_rows();
 
         // Each additional hop should reach at least as many people (monotonic increase)
@@ -680,7 +719,10 @@ async fn test_varlength_combined_filters() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     let ages = out.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
     let departments = out
@@ -716,7 +758,10 @@ async fn test_varlength_with_limit_and_order() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     assert_eq!(out.num_rows(), 3, "Should return exactly 3 results");
 
@@ -749,7 +794,10 @@ async fn test_varlength_large_hop_count() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Due to cycles, Alice can reach many people with 10 hops
     assert!(out.num_rows() >= 5, "Should reach many people with 10 hops");
@@ -775,7 +823,10 @@ async fn test_varlength_all_pairs_reachability() {
     datasets.insert("Person".to_string(), person_batch);
     datasets.insert("KNOWS".to_string(), knows_batch);
 
-    let out = query.execute_datafusion(datasets).await.unwrap();
+    let out = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
     // Should find many connected pairs
     assert!(

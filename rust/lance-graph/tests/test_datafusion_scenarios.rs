@@ -1,7 +1,7 @@
 use arrow_array::{BooleanArray, Int64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use lance_graph::config::GraphConfig;
-use lance_graph::query::CypherQuery;
+use lance_graph::{CypherQuery, ExecutionStrategy};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ async fn execute_query(graph: TestGraph, cypher: &str) -> RecordBatch {
     CypherQuery::new(cypher)
         .unwrap()
         .with_config(graph.config)
-        .execute_datafusion(graph.datasets)
+        .execute(graph.datasets, Some(ExecutionStrategy::DataFusion))
         .await
         .unwrap()
 }

@@ -63,10 +63,7 @@ async fn test_execute_with_context_csv_simple() {
             .unwrap()
             .with_config(config.clone());
 
-    let result1 = query1
-        .execute_with_datafusion_context(ctx.clone())
-        .await
-        .unwrap();
+    let result1 = query1.execute_with_context(ctx.clone()).await.unwrap();
 
     // Should return Bob (34) and David (42)
     assert_eq!(result1.num_rows(), 2);
@@ -102,7 +99,7 @@ async fn test_execute_with_context_csv_simple() {
     .unwrap()
     .with_config(config);
 
-    let result2 = query2.execute_with_datafusion_context(ctx).await.unwrap();
+    let result2 = query2.execute_with_context(ctx).await.unwrap();
 
     // Should return 3 relationships: Alice->Bob, Alice->Carol, Bob->Carol
     assert_eq!(result2.num_rows(), 3);
@@ -226,7 +223,7 @@ async fn test_execute_with_context_complex_query() {
     .unwrap()
     .with_config(config);
 
-    let result = query.execute_with_datafusion_context(ctx).await.unwrap();
+    let result = query.execute_with_context(ctx).await.unwrap();
 
     // Should return David (95000) and Bob (85000) from Engineering
     assert_eq!(result.num_rows(), 2);
@@ -278,7 +275,7 @@ async fn test_execute_with_context_missing_table() {
         .unwrap()
         .with_config(config);
 
-    let result = query.execute_with_datafusion_context(ctx).await;
+    let result = query.execute_with_context(ctx).await;
 
     // Should error because Person table is not registered
     assert!(result.is_err());
@@ -324,7 +321,7 @@ async fn test_execute_with_context_aliases() {
     .unwrap()
     .with_config(config);
 
-    let result = query.execute_with_datafusion_context(ctx).await.unwrap();
+    let result = query.execute_with_context(ctx).await.unwrap();
 
     assert_eq!(result.num_rows(), 2);
 

@@ -103,7 +103,7 @@ async fn test_explain_simple_node_scan() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), create_person_dataset());
 
-    let plan = query.explain_datafusion(datasets).await.unwrap();
+    let plan = query.explain(datasets).await.unwrap();
     println!("{}", plan);
 
     assert!(plan.contains("Cypher Query:"));
@@ -134,7 +134,7 @@ async fn test_explain_one_hop_relationship() {
     datasets.insert("Person".to_string(), create_person_dataset());
     datasets.insert("KNOWS".to_string(), create_knows_dataset());
 
-    let plan = query.explain_datafusion(datasets).await.unwrap();
+    let plan = query.explain(datasets).await.unwrap();
     println!("{}", plan);
 
     assert!(plan.contains("| graph_logical_plan"));
@@ -166,7 +166,7 @@ async fn test_explain_two_hop_path() {
     datasets.insert("Person".to_string(), create_person_dataset());
     datasets.insert("KNOWS".to_string(), create_knows_dataset());
 
-    let plan = query.explain_datafusion(datasets).await.unwrap();
+    let plan = query.explain(datasets).await.unwrap();
     println!("{}", plan);
 
     assert!(plan.contains("| physical_plan"));
@@ -204,7 +204,7 @@ async fn test_explain_multi_relationship_types() {
     datasets.insert("Company".to_string(), create_company_dataset());
     datasets.insert("WORKS_AT".to_string(), create_works_at_dataset());
 
-    let plan = query.explain_datafusion(datasets).await.unwrap();
+    let plan = query.explain(datasets).await.unwrap();
     println!("{}", plan);
 
     assert!(plan.contains("Company"));
@@ -232,7 +232,7 @@ async fn test_explain_distinct() {
     datasets.insert("Person".to_string(), create_person_dataset());
     datasets.insert("KNOWS".to_string(), create_knows_dataset());
 
-    let plan = query.explain_datafusion(datasets).await.unwrap();
+    let plan = query.explain(datasets).await.unwrap();
     println!("{}", plan);
 
     assert!(plan.contains("Distinct") || plan.contains("DISTINCT"));
@@ -258,7 +258,7 @@ async fn test_explain_complex_filter() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), create_person_dataset());
 
-    let plan = query.explain_datafusion(datasets).await.unwrap();
+    let plan = query.explain(datasets).await.unwrap();
     println!("{}", plan);
 
     assert!(plan.contains("Filter"));
@@ -287,7 +287,7 @@ async fn test_explain_with_skip_and_limit() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), create_person_dataset());
 
-    let plan = query.explain_datafusion(datasets).await.unwrap();
+    let plan = query.explain(datasets).await.unwrap();
     println!("{}", plan);
 
     assert!(plan.contains("Limit") || plan.contains("LIMIT"));
@@ -316,7 +316,7 @@ async fn test_explain_relationship_properties() {
     datasets.insert("Person".to_string(), create_person_dataset());
     datasets.insert("KNOWS".to_string(), create_knows_dataset());
 
-    let plan = query.explain_datafusion(datasets).await.unwrap();
+    let plan = query.explain(datasets).await.unwrap();
     println!("{}", plan);
 
     assert!(plan.contains("since") || plan.contains("Filter"));
