@@ -18,20 +18,15 @@ mod expr;
 mod simple_executor;
 
 /// Execution strategy for Cypher queries
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExecutionStrategy {
     /// Use DataFusion query planner (default, full feature support)
+    #[default]
     DataFusion,
     /// Use simple single-table executor (legacy, limited features)
     Simple,
     /// Use Lance native executor (not yet implemented)
     LanceNative,
-}
-
-impl Default for ExecutionStrategy {
-    fn default() -> Self {
-        Self::DataFusion
-    }
 }
 
 /// A Cypher query that can be executed against Lance datasets
