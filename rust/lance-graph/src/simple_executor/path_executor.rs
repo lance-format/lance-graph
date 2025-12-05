@@ -1,8 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright The Lance Authors
+
 use crate::error::{GraphError, Result};
 use datafusion::logical_expr::JoinType;
 
 // Internal helper that plans and executes a single path by chaining joins.
-pub(super) struct PathExecutor<'a> {
+pub(crate) struct PathExecutor<'a> {
     pub(super) ctx: &'a datafusion::prelude::SessionContext,
     pub(super) path: &'a crate::ast::PathPattern,
     pub(super) start_label: &'a str,
@@ -22,7 +25,7 @@ struct SegMeta<'a> {
 }
 
 impl<'a> PathExecutor<'a> {
-    pub(super) fn new(
+    pub(crate) fn new(
         ctx: &'a datafusion::prelude::SessionContext,
         cfg: &'a crate::config::GraphConfig,
         path: &'a crate::ast::PathPattern,
@@ -174,7 +177,7 @@ impl<'a> PathExecutor<'a> {
             })
     }
 
-    pub(super) async fn build_chain(&self) -> Result<datafusion::dataframe::DataFrame> {
+    pub(crate) async fn build_chain(&self) -> Result<datafusion::dataframe::DataFrame> {
         // Start node
         let mut df = self
             .open_aliased(self.start_label, &self.start_alias)
@@ -282,7 +285,7 @@ impl<'a> PathExecutor<'a> {
         None
     }
 
-    pub(super) fn apply_where(
+    pub(crate) fn apply_where(
         &self,
         df: datafusion::dataframe::DataFrame,
         ast: &crate::ast::CypherQuery,
@@ -293,7 +296,7 @@ impl<'a> PathExecutor<'a> {
         })
     }
 
-    pub(super) fn apply_return(
+    pub(crate) fn apply_return(
         &self,
         df: datafusion::dataframe::DataFrame,
         ast: &crate::ast::CypherQuery,

@@ -8,14 +8,10 @@ use crate::config::GraphConfig;
 use crate::error::{GraphError, Result};
 use crate::logical_plan::LogicalPlanner;
 use crate::parser::parse_cypher_query;
+use crate::simple_executor::{
+    to_df_boolean_expr_simple, to_df_order_by_expr_simple, to_df_value_expr_simple, PathExecutor,
+};
 use std::collections::HashMap;
-
-mod path_executor;
-use self::path_executor::PathExecutor;
-mod aliases;
-mod clauses;
-mod expr;
-mod simple_executor;
 
 /// Execution strategy for Cypher queries
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -723,9 +719,7 @@ impl CypherQuery {
 
         // Apply WHERE if present (limited support: simple comparisons on a single column)
         if let Some(where_clause) = &self.ast.where_clause {
-            if let Some(filter_expr) =
-                simple_executor::to_df_boolean_expr_simple(&where_clause.expression)
-            {
+            if let Some(filter_expr) = to_df_boolean_expr_simple(&where_clause.expression) {
                 df = df.filter(filter_expr).map_err(|e| GraphError::PlanError {
                     message: format!("Failed to apply filter: {}", e),
                     location: snafu::Location::new(file!(), line!(), column!()),
@@ -739,7 +733,7 @@ impl CypherQuery {
             .return_clause
             .items
             .iter()
-            .map(|item| simple_executor::to_df_value_expr_simple(&item.expression))
+            .map(|item| to_df_value_expr_simple(&item.expression))
             .collect();
         if !proj_exprs.is_empty() {
             df = df.select(proj_exprs).map_err(|e| GraphError::PlanError {
@@ -758,7 +752,7 @@ impl CypherQuery {
 
         // Apply ORDER BY if present
         if let Some(order_by) = &self.ast.order_by {
-            let sort_expr = simple_executor::to_df_order_by_expr_simple(&order_by.items);
+            let sort_expr = to_df_order_by_expr_simple(&order_by.items);
             df = df.sort(sort_expr).map_err(|e| GraphError::PlanError {
                 message: format!("Failed to apply ORDER BY: {}", e),
                 location: snafu::Location::new(file!(), line!(), column!()),

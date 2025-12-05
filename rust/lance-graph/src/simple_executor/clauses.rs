@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright The Lance Authors
+
 use crate::error::Result;
 
 pub(super) fn apply_where_with_qualifier(
@@ -5,8 +8,8 @@ pub(super) fn apply_where_with_qualifier(
     ast: &crate::ast::CypherQuery,
     qualify: &dyn Fn(&str, &str) -> String,
 ) -> Result<datafusion::dataframe::DataFrame> {
+    use super::expr::to_df_boolean_expr_with_vars;
     use crate::error::GraphError;
-    use crate::query::expr::to_df_boolean_expr_with_vars;
     if let Some(where_clause) = &ast.where_clause {
         if let Some(expr) =
             to_df_boolean_expr_with_vars(&where_clause.expression, &|v, p| qualify(v, p))
