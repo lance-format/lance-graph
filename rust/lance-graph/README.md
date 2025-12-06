@@ -7,9 +7,10 @@ A graph query engine for Lance datasets with Cypher syntax support. This crate e
 - Cypher query parsing and AST construction
 - Graph configuration for mapping Lance tables to nodes and relationships
 - Semantic validation with typed `GraphError` diagnostics
-- Translation to DataFusion SQL with a direct-execution fast path for simple patterns
+- Pluggable execution strategies (DataFusion planner by default, simple executor, Lance Native placeholder)
 - Async query execution that returns Arrow `RecordBatch` results
 - JSON-serializable parameter binding for reusable query templates
+- Logical plan debugging via `CypherQuery::explain`
 
 ## Quick Start
 
@@ -19,7 +20,7 @@ use std::sync::Arc;
 
 use arrow_array::{ArrayRef, Int32Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
-use lance_graph::{CypherQuery, GraphConfig};
+use lance_graph::{CypherQuery, ExecutionStrategy, GraphConfig};
 
 let config = GraphConfig::builder()
     .with_node_label("Person", "person_id")
@@ -48,7 +49,11 @@ let query = CypherQuery::new("MATCH (p:Person) WHERE p.age > $min RETURN p.name"
     .with_parameter("min", 30);
 
 let runtime = tokio::runtime::Runtime::new()?;
-let result = runtime.block_on(query.execute(tables))?;
+// Use default DataFusion-based execution
+let result = runtime.block_on(query.execute(tables.clone(), None))?;
+
+// Opt in to the simple executor if you only need projection/filter support.
+let simple = runtime.block_on(query.execute(tables, Some(ExecutionStrategy::Simple)))?;
 ```
 
 The query expects a `HashMap<String, RecordBatch>` keyed by the labels and relationship types referenced in the Cypher text. Each record batch should expose the columns configured through `GraphConfig` (ID fields, property fields, etc.). Relationship mappings also expect a batch keyed by the relationship type (for example `KNOWS`) that contains the configured source/target ID columns and any optional property columns.
@@ -87,9 +92,10 @@ let config = GraphConfig::builder()
 - `CypherQuery::new` parses Cypher text into the internal AST.
 - `with_config` attaches the graph configuration used for validation and execution.
 - `with_parameter` / `with_parameters` bind JSON-serializable values that can be referenced as `$param` in the Cypher text.
-- `execute` is asynchronous and returns an Arrow `RecordBatch`.
+- `execute` is asynchronous and returns an Arrow `RecordBatch`. Pass `None` for the default DataFusion planner or `Some(ExecutionStrategy::Simple)` for the single-table executor. `ExecutionStrategy::LanceNative` is reserved for future native execution support and currently errors.
+- `explain` is asynchronous and returns a formatted string containing the graph logical plan alongside the DataFusion logical and physical plans.
 
-Queries with a single `MATCH` clause containing a path pattern are planned as joins using the provided mappings. Other queries fall back to a single-table projection/filter pipeline on the first registered dataset.
+Queries with a single `MATCH` clause containing a path pattern are planned as joins using the provided mappings. Other queries can opt into the single-table projection/filter pipeline via `ExecutionStrategy::Simple` when DataFusion's planner is unnecessary.
 
 A builder (`CypherQueryBuilder`) is also available for constructing queries programmatically without parsing text.
 
@@ -101,15 +107,16 @@ A builder (`CypherQueryBuilder`) is also available for constructing queries prog
 - RETURN lists of property accesses, optional `DISTINCT`, `ORDER BY`, `SKIP` (offset), and `LIMIT`.
 - Positional and named parameters (e.g. `$min_age`).
 
-Features such as aggregations, optional matches, and subqueries are parsed but not executed yet.
+Basic aggregations like `COUNT` are supported. Optional matches and subqueries are parsed but not executed yet.
 
 ## Crate Layout
 
 - `ast` – Cypher AST definitions.
 - `parser` – Nom-based Cypher parser.
 - `semantic` – Lightweight semantic checks on the AST.
-- `logical_plan` – Builders for DataFusion logical plans.
-- `datafusion_planner` and `query_processor` – Execution planning utilities.
+- `logical_plan` – Builders for graph logical plans.
+- `datafusion_planner` – DataFusion-based execution planning.
+- `simple_executor` – Simple single-table executor.
 - `config` – Graph configuration types and builders.
 - `query` – High level `CypherQuery` API and runtime.
 - `error` – `GraphError` and result helpers.
