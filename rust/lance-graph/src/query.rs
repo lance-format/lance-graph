@@ -201,6 +201,61 @@ impl CypherQuery {
         self.explain_internal(Arc::new(catalog), ctx).await
     }
 
+    /// Convert the Cypher query to a DataFusion SQL string
+    ///
+    /// This method generates a SQL string that corresponds to the DataFusion logical plan
+    /// derived from the Cypher query. It uses the `datafusion-sql` unparser.
+    ///
+    /// **WARNING**: This method is experimental and the generated SQL dialect may change.
+    ///
+    /// **Case Sensitivity Limitation**: All table names in the generated SQL are lowercased
+    /// (e.g., `Person` becomes `person`, `Company` becomes `company`), due to the internal
+    /// handling of DataFusion's SQL unparser. Note that this only affects the SQL string
+    /// representation - actual query execution with `execute()` handles case-sensitive labels
+    /// correctly.
+    ///
+    /// If you need case-sensitive table names in the SQL output, consider:
+    /// - Using lowercase labels consistently in your Cypher queries and table names
+    /// - Post-processing the SQL string to replace table names with the correct case
+    ///
+    /// # Arguments
+    /// * `datasets` - HashMap of table name to RecordBatch (nodes and relationships)
+    ///
+    /// # Returns
+    /// A SQL string representing the query
+    pub async fn to_sql(
+        &self,
+        datasets: HashMap<String, arrow::record_batch::RecordBatch>,
+    ) -> Result<String> {
+        use datafusion_sql::unparser::plan_to_sql;
+        use std::sync::Arc;
+
+        let _config = self.require_config()?;
+
+        // Build catalog and context from datasets using the helper
+        let (catalog, ctx) = self
+            .build_catalog_and_context_from_datasets(datasets)
+            .await?;
+
+        // Generate Logical Plan
+        let (_, df_plan) = self.create_logical_plans(Arc::new(catalog))?;
+
+        // Optimize the plan using DataFusion's default optimizer rules
+        // This helps simplify the plan (e.g., merging projections) to produce cleaner SQL
+        let optimized_plan = ctx.state().optimize(&df_plan).map_err(|e| GraphError::PlanError {
+            message: format!("Failed to optimize plan: {}", e),
+            location: snafu::Location::new(file!(), line!(), column!()),
+        })?;
+
+        // Unparse to SQL
+        let sql_ast = plan_to_sql(&optimized_plan).map_err(|e| GraphError::PlanError {
+            message: format!("Failed to unparse plan to SQL: {}", e),
+            location: snafu::Location::new(file!(), line!(), column!()),
+        })?;
+
+        Ok(sql_ast.to_string())
+    }
+
     /// Execute query with a DataFusion SessionContext, automatically building the catalog
     ///
     /// This is a convenience method that builds the graph catalog by querying the
@@ -1821,5 +1876,40 @@ mod tests {
         // Second row should be Bob (92)
         assert_eq!(names.value(1), "Bob");
         assert_eq!(scores.value(1), 92);
+    }
+
+    #[tokio::test]
+    async fn test_to_sql() {
+        use arrow_array::RecordBatch;
+        use arrow_schema::{DataType, Field, Schema};
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("name", DataType::Utf8, false),
+        ]));
+        let batch = RecordBatch::new_empty(schema.clone());
+
+        let mut datasets = HashMap::new();
+        datasets.insert("Person".to_string(), batch);
+
+        let cfg = GraphConfig::builder()
+            .with_node_label("Person", "id")
+            .build()
+            .unwrap();
+
+        let query = CypherQuery::new("MATCH (p:Person) RETURN p.name")
+            .unwrap()
+            .with_config(cfg);
+
+        let sql = query.to_sql(datasets).await.unwrap();
+        println!("Generated SQL: {}", sql);
+
+        assert!(sql.contains("SELECT"));
+        assert!(sql.to_lowercase().contains("from person"));
+        // Note: DataFusion unparser might quote identifiers or use aliases
+        // We check for "p.name" which is the expected output alias
+        assert!(sql.contains("p.name"));
     }
 }
