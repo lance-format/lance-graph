@@ -242,10 +242,13 @@ impl CypherQuery {
 
         // Optimize the plan using DataFusion's default optimizer rules
         // This helps simplify the plan (e.g., merging projections) to produce cleaner SQL
-        let optimized_plan = ctx.state().optimize(&df_plan).map_err(|e| GraphError::PlanError {
-            message: format!("Failed to optimize plan: {}", e),
-            location: snafu::Location::new(file!(), line!(), column!()),
-        })?;
+        let optimized_plan = ctx
+            .state()
+            .optimize(&df_plan)
+            .map_err(|e| GraphError::PlanError {
+                message: format!("Failed to optimize plan: {}", e),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            })?;
 
         // Unparse to SQL
         let sql_ast = plan_to_sql(&optimized_plan).map_err(|e| GraphError::PlanError {
