@@ -269,6 +269,11 @@ impl CypherQuery {
 
     /// Convert query to SQL
     ///
+    /// Parameters
+    /// ----------
+    /// datasets : dict
+    ///     Dictionary mapping table names to Lance datasets
+    ///
     /// Returns
     /// -------
     /// str
@@ -278,10 +283,19 @@ impl CypherQuery {
     /// ------
     /// RuntimeError
     ///     If SQL generation fails
-    fn to_sql(&self) -> PyResult<String> {
-        // SQL generation not yet implemented in lance-graph.
-        // Return the original query text for now to keep API stable.
-        Ok(self.inner.query_text().to_string())
+    fn to_sql(&self, py: Python, datasets: &Bound<'_, PyDict>) -> PyResult<String> {
+        // Convert datasets to Arrow RecordBatch map
+        let arrow_datasets = python_datasets_to_batches(datasets)?;
+
+        // Clone for async move
+        let inner_query = self.inner.clone();
+
+        // Execute via runtime
+        let sql = RT
+            .block_on(Some(py), inner_query.to_sql(arrow_datasets))?
+            .map_err(graph_error_to_pyerr)?;
+
+        Ok(sql)
     }
 
     /// Execute query against Lance datasets
