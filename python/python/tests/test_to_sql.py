@@ -15,7 +15,13 @@ def knowledge_graph_env():
     authors_table = pa.table(
         {
             "author_id": [1, 2, 3, 4, 5],
-            "name": ["Alice Chen", "Bob Smith", "Carol Wang", "David Lee", "Eve Martinez"],
+            "name": [
+                "Alice Chen",
+                "Bob Smith",
+                "Carol Wang",
+                "David Lee",
+                "Eve Martinez",
+            ],
             "institution": ["MIT", "Stanford", "CMU", "Berkeley", "MIT"],
             "h_index": [45, 38, 52, 41, 29],
             "country": ["USA", "USA", "USA", "USA", "Spain"],
