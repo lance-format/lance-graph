@@ -1,0 +1,71 @@
+name: Python Publish
+
+on:
+  release:
+    types:
+      - released
+  pull_request:
+    paths:
+      - .github/workflows/python-publish.yml
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run: build & test only, release: build & publish to PyPI"
+        required: true
+        default: dry_run
+        type: choice
+        options:
+          - dry_run
+          - release
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTFLAGS: "-C debuginfo=1"
+      RUST_BACKTRACE: "1"
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y protobuf-compiler libssl-dev
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build distributions
+        working-directory: python
+        run: |
+          make publish
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: python/dist
+
+      - name: Publish to PyPI
+        if: >
+          (github.event_name == 'release' && github.event.action == 'released') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'release')
+        working-directory: python
+        run: |
+          uv publish --trusted-publishing always

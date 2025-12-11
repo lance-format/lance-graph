@@ -1,6 +1,6 @@
 [project]
 name = "lance-graph"
-dynamic = ["version"]
+version = "0.1.0"
 dependencies = [
     "pyarrow>=14",
     "pyyaml>=6.0",

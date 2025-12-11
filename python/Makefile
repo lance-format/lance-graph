@@ -4,7 +4,7 @@ PYTEST_ARGS ?= -vv -s
 
 export PATH := $(HOME)/.local/bin:$(PATH)
 
-.PHONY: venv install test lint clean
+.PHONY: venv install test lint clean publish
 
 venv:
 	$(UV) venv --python $(PYTHON) .venv
@@ -23,3 +23,6 @@ lint:
 clean:
 	rm -rf .venv
 	rm -rf target
+
+publish:
+	$(UV) build --wheel --sdist --out-dir dist

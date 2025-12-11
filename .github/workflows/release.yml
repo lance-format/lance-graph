@@ -1,0 +1,191 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Version bump type (patch/minor/major bumps version, current keeps it unchanged)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - current
+      release_channel:
+        description: 'Release channel (preview creates beta tag, stable creates release tag)'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+          - preview
+          - stable
+      dry_run:
+        description: 'Dry run (simulate the release without pushing)'
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Output Inputs
+      run: echo "${{ toJSON(github.event.inputs) }}"
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: main
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v4
+
+    - name: Install python dependencies
+      run: |
+        pip install packaging bump-my-version toml
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y protobuf-compiler libssl-dev
+
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+        components: rustfmt, clippy
+
+    - uses: rui314/setup-mold@v1
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          rust/lance-graph
+          python
+
+    - name: Get current version
+      id: current_version
+      run: |
+        CURRENT_VERSION=$(python -c "import toml; print(toml.load('.bumpversion.toml')['tool']['bumpversion']['current_version'])")
+        echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        echo "Current version: $CURRENT_VERSION"
+
+    - name: Calculate base version
+      id: base_version
+      run: |
+        python ci/calculate_version.py \
+          --current "${{ steps.current_version.outputs.version }}" \
+          --type "${{ inputs.release_type }}" \
+          --channel "${{ inputs.release_channel }}"
+
+    - name: Determine tag and version
+      id: versions
+      run: |
+        BASE_VERSION="${{ steps.base_version.outputs.version }}"
+        if [ "${{ inputs.release_channel }}" == "stable" ]; then
+          TAG="v${BASE_VERSION}"
+          VERSION="${BASE_VERSION}"
+        else
+          # For preview releases, find the next beta number for this base version
+          BETA_TAGS=$(git tag -l "v${BASE_VERSION}-beta.*" | sort -V)
+          if [ -z "$BETA_TAGS" ]; then
+            BETA_NUM=1
+          else
+            LAST_BETA=$(echo "$BETA_TAGS" | tail -n 1)
+            LAST_NUM=$(echo "$LAST_BETA" | sed "s/v${BASE_VERSION}-beta.//")
+            BETA_NUM=$((LAST_NUM + 1))
+          fi
+          TAG="v${BASE_VERSION}-beta.${BETA_NUM}"
+          VERSION="${BASE_VERSION}-beta.${BETA_NUM}"
+        fi
+
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Tag will be: $TAG"
+        echo "Version will be: $VERSION"
+
+    - name: Update version (when version changes)
+      if: inputs.release_type != 'current'
+      run: |
+        python ci/bump_version.py --version "${{ steps.versions.outputs.version }}"
+
+    - name: Configure git identity
+      run: |
+        git config user.name 'Lance Release Bot'
+        git config user.email 'dev@lancedb.com'
+
+    - name: Update Cargo lock version (when version changes)
+      if: inputs.release_type != 'current'
+      run: |
+        cargo check --manifest-path rust/lance-graph/Cargo.toml
+        cargo check --manifest-path python/Cargo.toml
+
+    - name: Create release commit (when version changes)
+      if: inputs.release_type != 'current'
+      run: |
+        git add -A
+        git commit -m "chore: release version ${{ steps.versions.outputs.version }}" || echo "No changes to commit"
+
+    - name: Create tag
+      run: |
+        git tag -a "${{ steps.versions.outputs.tag }}" -m "Release ${{ steps.versions.outputs.tag }}"
+
+    - name: Push changes (if not dry run)
+      if: ${{ !inputs.dry_run }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Configure git to use the token for authentication
+        git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+
+        if [ "${{ inputs.release_type }}" != "current" ]; then
+          # Push the version bump commit
+          git push origin main
+        fi
+        # Always push the tag
+        git push origin "${{ steps.versions.outputs.tag }}"
+
+    - name: Create GitHub Release Draft (if not dry run)
+      if: ${{ !inputs.dry_run }}
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.versions.outputs.tag }}
+        name: ${{ steps.versions.outputs.tag }}
+        generate_release_notes: true
+        draft: true
+        prerelease: ${{ inputs.release_channel == 'preview' }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Summary
+      run: |
+        echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Release Type:** ${{ inputs.release_type }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Release Channel:** ${{ inputs.release_channel }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Current Version:** ${{ steps.current_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ inputs.release_type }}" != "current" ]; then
+          echo "- **New Version:** ${{ steps.versions.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "- **Tag:** ${{ steps.versions.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Dry Run:** ${{ inputs.dry_run }}" >> $GITHUB_STEP_SUMMARY
+
+        if [ "${{ inputs.dry_run }}" == "true" ]; then
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ This was a dry run. No changes were pushed." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📝 Draft release created successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the draft release on the [releases page](https://github.com/${{ github.repository }}/releases)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Edit the release notes if needed" >> $GITHUB_STEP_SUMMARY
+          echo "3. Publish the release to trigger automatic publishing to PyPI and crates.io" >> $GITHUB_STEP_SUMMARY
+        fi
