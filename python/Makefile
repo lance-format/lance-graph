@@ -25,4 +25,4 @@ clean:
 	rm -rf target
 
 publish:
-	maturin build --release --out dist --sdist --compatibility manylinux2014
+	maturin build --release --out dist --sdist
