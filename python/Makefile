@@ -25,4 +25,4 @@ clean:
 	rm -rf target
 
 publish:
-	$(UV) build --wheel --sdist --out-dir dist
+	maturin build --release --out dist --sdist --compatibility manylinux2014
