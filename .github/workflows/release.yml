@@ -38,7 +38,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         ref: main
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.LANCE_RELEASE_TOKEN }}
         fetch-depth: 0
 
     - name: Set up Python
@@ -136,7 +136,7 @@ jobs:
     - name: Push changes (if not dry run)
       if: ${{ !inputs.dry_run }}
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.LANCE_RELEASE_TOKEN }}
       run: |
         # Configure git to use the token for authentication
         git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
@@ -157,7 +157,7 @@ jobs:
         generate_release_notes: true
         draft: true
         prerelease: ${{ inputs.release_channel == 'preview' }}
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.LANCE_RELEASE_TOKEN }}
 
     - name: Summary
       run: |
