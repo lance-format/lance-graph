@@ -66,8 +66,6 @@ jobs:
     - uses: rui314/setup-mold@v1
 
     - uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: rust
 
     - name: Get current version
       id: current_version
