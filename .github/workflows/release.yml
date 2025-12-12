@@ -67,9 +67,7 @@ jobs:
 
     - uses: Swatinem/rust-cache@v2
       with:
-        workspaces: |
-          rust/lance-graph
-          python
+        workspaces: rust
 
     - name: Get current version
       id: current_version
