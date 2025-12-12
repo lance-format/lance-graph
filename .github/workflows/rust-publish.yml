@@ -42,6 +42,7 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+          cache: false
 
       - uses: rui314/setup-mold@v1
 
