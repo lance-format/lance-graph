@@ -35,12 +35,14 @@ def ask_question(
     llm_temperature: float,
     llm_config_path,
     embedding_model: str | None,
+    llm_callable=None,
 ) -> str:
     client_options = load_llm_options(llm_config_path)
     llm_client = create_llm_client(
         llm_model=llm_model,
         llm_temperature=llm_temperature,
         llm_options=client_options,
+        llm_callable=llm_callable,
     )
     embedding_generator = resolve_embedding_generator(
         model_name=embedding_model, options=client_options

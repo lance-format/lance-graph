@@ -37,9 +37,11 @@ def create_llm_client(
     llm_model: str,
     llm_temperature: float,
     llm_options: Optional[Mapping[str, Any]] = None,
+    llm_callable: Optional[Any] = None,
 ) -> kg_extraction.LLMClient:
     resolved_options = dict(llm_options or {})
     return kg_extraction.get_llm_client(
+        llm_callable=llm_callable,
         llm_model=llm_model,
         llm_temperature=llm_temperature,
         llm_options=resolved_options,
