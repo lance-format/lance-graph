@@ -319,7 +319,7 @@ def _discover_relationship_types(service: LanceKnowledgeGraph) -> list[str]:
 
     Results are cached on the service object to avoid repeated table loads.
     """
-    if hasattr(service, '_cached_rel_types'):
+    if hasattr(service, "_cached_rel_types"):
         return service._cached_rel_types
 
     try:
@@ -341,7 +341,7 @@ def _discover_entity_types(service: LanceKnowledgeGraph) -> list[str]:
 
     Results are cached on the service object to avoid repeated table loads.
     """
-    if hasattr(service, '_cached_entity_types'):
+    if hasattr(service, "_cached_entity_types"):
         return service._cached_entity_types
 
     try:
