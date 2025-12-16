@@ -155,7 +155,27 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
                 }
             }
         }
-        VE::Arithmetic { .. } => lit(0),
+        VE::Arithmetic {
+            left,
+            operator,
+            right,
+        } => {
+            use crate::ast::ArithmeticOperator as AO;
+            let l = to_df_value_expr(left);
+            let r = to_df_value_expr(right);
+            let op = match operator {
+                AO::Add => Operator::Plus,
+                AO::Subtract => Operator::Minus,
+                AO::Multiply => Operator::Multiply,
+                AO::Divide => Operator::Divide,
+                AO::Modulo => Operator::Modulo,
+            };
+            Expr::BinaryExpr(BinaryExpr {
+                left: Box::new(l),
+                op,
+                right: Box::new(r),
+            })
+        }
     }
 }
 
@@ -468,13 +488,10 @@ mod tests {
 
         let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
-        // TODO: Arithmetic expressions are not yet implemented (line 124 returns lit(0) placeholder)
-        // Once implemented, this should return a BinaryExpr with Plus operator
-        // For now, verify it returns the placeholder without panicking
-        assert_eq!(
-            s, "Literal(Int32(0), None)",
-            "Arithmetic currently returns placeholder lit(0)"
-        );
+        // Arithmetic expressions should now return a BinaryExpr with Plus operator
+        assert!(s.contains("BinaryExpr"), "Should be a BinaryExpr");
+        assert!(s.contains("Plus"), "Should contain Plus operator");
+        assert!(s.contains("p__age"), "Should contain the left operand column");
     }
 
     #[test]
@@ -482,13 +499,13 @@ mod tests {
         use crate::ast::ArithmeticOperator;
 
         let operators = vec![
-            ArithmeticOperator::Add,
-            ArithmeticOperator::Subtract,
-            ArithmeticOperator::Multiply,
-            ArithmeticOperator::Divide,
+            (ArithmeticOperator::Add, "Plus"),
+            (ArithmeticOperator::Subtract, "Minus"),
+            (ArithmeticOperator::Multiply, "Multiply"),
+            (ArithmeticOperator::Divide, "Divide"),
         ];
 
-        for op in operators {
+        for (op, expected_op_str) in operators {
             let expr = ValueExpression::Arithmetic {
                 left: Box::new(ValueExpression::Literal(PropertyValue::Integer(10))),
                 operator: op,
@@ -496,8 +513,18 @@ mod tests {
             };
 
             let df_expr = to_df_value_expr(&expr);
-            // Should successfully translate without panicking
-            let _ = format!("{:?}", df_expr);
+            let s = format!("{:?}", df_expr);
+            // Should translate to BinaryExpr with the correct operator
+            assert!(
+                s.contains("BinaryExpr"),
+                "Arithmetic should produce BinaryExpr"
+            );
+            assert!(
+                s.contains(expected_op_str),
+                "Expected operator {} in expression: {}",
+                expected_op_str,
+                s
+            );
         }
     }
 
