@@ -3263,21 +3263,21 @@ async fn test_min_max_with_grouping() {
     assert_eq!(min_col_min.value(1), 30);
     assert_eq!(min_col_max.value(1), 30);
 
-    assert_eq!(city_col.value(2), "New York"); // Alice
-    assert_eq!(city_col.value(2), "New York");
-    assert_eq!(min_col.value(2), 25);
-    assert_eq!(min_col.value(2), 25);
+    assert_eq!(city_col_min.value(2), "New York"); // Alice
+    assert_eq!(city_col_max.value(2), "New York");
+    assert_eq!(min_col_min.value(2), 25);
+    assert_eq!(min_col_max.value(2), 25);
 
-    assert_eq!(city_col.value(3), "San Francisco"); // Bob
-    assert_eq!(city_col.value(3), "San Francisco");
-    assert_eq!(min_col.value(3), 35);
-    assert_eq!(min_col.value(3), 35);
+    assert_eq!(city_col_min.value(3), "San Francisco"); // Bob
+    assert_eq!(city_col_max.value(3), "San Francisco");
+    assert_eq!(min_col_min.value(3), 35);
+    assert_eq!(min_col_max.value(3), 35);
 
 
-    assert_eq!(city_col.value(4), "Seattle"); // Eve
-    assert_eq!(city_col.value(4), "Seattle");
-    assert_eq!(min_col.value(4), 28);
-    assert_eq!(min_col.value(4), 28);
+    assert_eq!(city_col_min.value(4), "Seattle"); // Eve
+    assert_eq!(city_col_max.value(4), "Seattle");
+    assert_eq!(min_col_min.value(4), 28);
+    assert_eq!(min_col_max.value(4), 28);
 }
 
 // ============================================================================
