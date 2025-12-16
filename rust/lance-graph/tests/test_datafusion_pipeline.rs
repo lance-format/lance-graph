@@ -1,10 +1,10 @@
-use arrow::compute::kernels::numeric::add;
 use arrow_array::{Array, Float64Array, Int64Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use lance_graph::config::GraphConfig;
 use lance_graph::{CypherQuery, ExecutionStrategy};
 use std::collections::HashMap;
 use std::sync::Arc;
+
 // ============================================================================
 // Test Data Structure
 // ============================================================================
@@ -76,72 +76,6 @@ fn create_person_dataset() -> RecordBatch {
                 None,
                 Some("Seattle"),
             ])),
-        ],
-    )
-    .unwrap()
-}
-
-fn add_new_person_to_dataset(
-    current_dataset: &RecordBatch,
-    id: i64,
-    name: &str,
-    age: i64,
-    city: Option<&str>,
-) -> RecordBatch {
-    let schema = current_dataset.schema();
-
-    let ids_arr = current_dataset
-        .column_by_name("id")
-        .unwrap()
-        .as_any()
-        .downcast_ref::<Int64Array>()
-        .unwrap();
-    let names_arr = current_dataset
-        .column_by_name("name")
-        .unwrap()
-        .as_any()
-        .downcast_ref::<StringArray>()
-        .unwrap();
-    let ages_arr = current_dataset
-        .column_by_name("age")
-        .unwrap()
-        .as_any()
-        .downcast_ref::<Int64Array>()
-        .unwrap();
-    let cities_arr = current_dataset
-        .column_by_name("city")
-        .unwrap()
-        .as_any()
-        .downcast_ref::<StringArray>()
-        .unwrap();
-
-    let mut ids: Vec<i64> = (0..ids_arr.len()).map(|i| ids_arr.value(i)).collect();
-    let mut names: Vec<String> = (0..names_arr.len())
-        .map(|i| names_arr.value(i).to_string())
-        .collect();
-    let mut ages: Vec<i64> = (0..ages_arr.len()).map(|i| ages_arr.value(i)).collect();
-    let mut cities: Vec<Option<String>> = (0..cities_arr.len())
-        .map(|i| {
-            if cities_arr.is_null(i) {
-                None
-            } else {
-                Some(cities_arr.value(i).to_string())
-            }
-        })
-        .collect();
-
-    ids.push(id);
-    names.push(name.to_string());
-    ages.push(age);
-    cities.push(city.map(|c| c.to_string()));
-
-    RecordBatch::try_new(
-        schema,
-        vec![
-            Arc::new(Int64Array::from(ids)),
-            Arc::new(StringArray::from(names)),
-            Arc::new(Int64Array::from(ages)),
-            Arc::new(StringArray::from(cities)),
         ],
     )
     .unwrap()
@@ -3223,93 +3157,6 @@ async fn test_min_property() {
 }
 
 #[tokio::test]
-async fn test_min_without_alias_has_descriptive_name() {
-    let person_batch = create_person_dataset();
-    let config = GraphConfig::builder()
-        .with_node_label("Person", "id")
-        .build()
-        .unwrap();
-
-    let query = CypherQuery::new("MATCH (p:Person) RETURN min(p.age)")
-        .unwrap()
-        .with_config(config);
-
-    let mut datasets = HashMap::new();
-    datasets.insert("Person".to_string(), person_batch);
-
-    let result = query
-        .execute(datasets, Some(ExecutionStrategy::DataFusion))
-        .await
-        .unwrap();
-
-    assert_eq!(result.num_rows(), 1);
-
-    // Column should be named "min(p.age)"
-    let col = result.column_by_name("min(p.age)");
-    assert!(
-        col.is_some(),
-        "Expected column named 'min(p.age)' but schema is: {:?}",
-        result.schema()
-    );
-}
-
-#[tokio::test]
-async fn test_min_with_grouping() {
-    let mut person_batch = create_person_dataset();
-    person_batch = add_new_person_to_dataset(&person_batch, 6, "Cindy", 10, Some("New York"));
-    let config = GraphConfig::builder()
-        .with_node_label("Person", "id")
-        .build()
-        .unwrap();
-
-    // One person per city in this dataset (including NULL), so min(age) == that person's age
-    let query =
-        CypherQuery::new("MATCH (p:Person) RETURN p.city, min(p.age) AS min_age ORDER BY p.city")
-            .unwrap()
-            .with_config(config);
-
-    let mut datasets = HashMap::new();
-    datasets.insert("Person".to_string(), person_batch);
-
-    let result = query
-        .execute(datasets, Some(ExecutionStrategy::DataFusion))
-        .await
-        .unwrap();
-
-    assert_eq!(result.num_rows(), 5);
-
-    let city_col = result
-        .column_by_name("p.city")
-        .unwrap()
-        .as_any()
-        .downcast_ref::<StringArray>()
-        .unwrap();
-
-    let min_col = result
-        .column_by_name("min_age")
-        .unwrap()
-        .as_any()
-        .downcast_ref::<Int64Array>()
-        .unwrap();
-
-    // ORDER BY p.city, NULL comes first per your other tests
-    assert!(city_col.is_null(0)); // David city NULL
-    assert_eq!(min_col.value(0), 40);
-
-    assert_eq!(city_col.value(1), "Chicago"); // Charlie
-    assert_eq!(min_col.value(1), 30);
-
-    assert_eq!(city_col.value(2), "New York"); // Alice
-    assert_eq!(min_col.value(2), 10);
-
-    assert_eq!(city_col.value(3), "San Francisco"); // Bob
-    assert_eq!(min_col.value(3), 35);
-
-    assert_eq!(city_col.value(4), "Seattle"); // Eve
-    assert_eq!(min_col.value(4), 28);
-}
-
-#[tokio::test]
 async fn test_max_property() {
     let person_batch = create_person_dataset();
     let config = GraphConfig::builder()
@@ -3343,47 +3190,20 @@ async fn test_max_property() {
 }
 
 #[tokio::test]
-async fn test_max_without_alias_has_descriptive_name() {
+async fn test_min_max_with_grouping() {
     let person_batch = create_person_dataset();
     let config = GraphConfig::builder()
         .with_node_label("Person", "id")
         .build()
         .unwrap();
 
-    let query = CypherQuery::new("MATCH (p:Person) RETURN max(p.age)")
-        .unwrap()
-        .with_config(config);
-
-    let mut datasets = HashMap::new();
-    datasets.insert("Person".to_string(), person_batch);
-
-    let result = query
-        .execute(datasets, Some(ExecutionStrategy::DataFusion))
-        .await
-        .unwrap();
-
-    assert_eq!(result.num_rows(), 1);
-
-    // Column should be named "max(p.age)"
-    let col = result.column_by_name("max(p.age)");
-    assert!(
-        col.is_some(),
-        "Expected column named 'max(p.age)' but schema is: {:?}",
-        result.schema()
-    );
-}
-
-#[tokio::test]
-async fn test_max_with_grouping() {
-    let mut person_batch = create_person_dataset();
-    person_batch = add_new_person_to_dataset(&person_batch, 6, "Cindy", 90, Some("New York"));
-    let config = GraphConfig::builder()
-        .with_node_label("Person", "id")
-        .build()
-        .unwrap();
-
     // One person per city in this dataset (including NULL), so min(age) == that person's age
-    let query =
+    let query_min =
+        CypherQuery::new("MATCH (p:Person) RETURN p.city, min(p.age) AS min_age ORDER BY p.city")
+            .unwrap()
+            .with_config(config);
+
+    let query_max =
         CypherQuery::new("MATCH (p:Person) RETURN p.city, max(p.age) AS max_age ORDER BY p.city")
             .unwrap()
             .with_config(config);
@@ -3391,21 +3211,41 @@ async fn test_max_with_grouping() {
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);
 
-    let result = query
+    let result_min = query_min
         .execute(datasets, Some(ExecutionStrategy::DataFusion))
         .await
         .unwrap();
 
-    assert_eq!(result.num_rows(), 5);
+    let result_max = query_max
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
 
-    let city_col = result
+    assert_eq!(result_min.num_rows(), 5);
+    assert_eq!(result_max.num_rows(), 5);
+
+    let city_col_min = result_min
         .column_by_name("p.city")
         .unwrap()
         .as_any()
         .downcast_ref::<StringArray>()
         .unwrap();
 
-    let max_col = result
+    let min_col_min = result_min
+        .column_by_name("min_age")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+
+    let city_col_max = result_max
+        .column_by_name("p.city")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    let min_col_max = result_max
         .column_by_name("max_age")
         .unwrap()
         .as_any()
@@ -3413,20 +3253,31 @@ async fn test_max_with_grouping() {
         .unwrap();
 
     // ORDER BY p.city, NULL comes first per your other tests
-    assert!(city_col.is_null(0)); // David city NULL
-    assert_eq!(max_col.value(0), 40);
+    assert!(city_col_min.is_null(0)); // David city NULL
+    assert!(city_col_max.is_null(0));
+    assert_eq!(min_col_min.value(0), 40);
+    assert_eq!(min_col_max.value(0), 40);
 
-    assert_eq!(city_col.value(1), "Chicago"); // Charlie
-    assert_eq!(max_col.value(1), 30);
+    assert_eq!(city_col_min.value(1), "Chicago"); // Charlie
+    assert_eq!(city_col_max.value(1), "Chicago");
+    assert_eq!(min_col_min.value(1), 30);
+    assert_eq!(min_col_max.value(1), 30);
 
     assert_eq!(city_col.value(2), "New York"); // Alice
-    assert_eq!(max_col.value(2), 90);
+    assert_eq!(city_col.value(2), "New York");
+    assert_eq!(min_col.value(2), 25);
+    assert_eq!(min_col.value(2), 25);
 
     assert_eq!(city_col.value(3), "San Francisco"); // Bob
-    assert_eq!(max_col.value(3), 35);
+    assert_eq!(city_col.value(3), "San Francisco");
+    assert_eq!(min_col.value(3), 35);
+    assert_eq!(min_col.value(3), 35);
+
 
     assert_eq!(city_col.value(4), "Seattle"); // Eve
-    assert_eq!(max_col.value(4), 28);
+    assert_eq!(city_col.value(4), "Seattle");
+    assert_eq!(min_col.value(4), 28);
+    assert_eq!(min_col.value(4), 28);
 }
 
 // ============================================================================
