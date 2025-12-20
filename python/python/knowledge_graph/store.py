@@ -1,4 +1,4 @@
-"""Persistent storage helpers built on Lance datasets (with Feather fallback)."""
+"""Persistent storage helpers built on Lance datasets."""
 
 from __future__ import annotations
 
@@ -46,42 +46,35 @@ class LanceGraphStore:
         datasets: Dict[str, Path] = {}
         if not self._root.exists():
             return datasets
-        valid_suffixes = {".lance", ".arrow"}
         for child in self._root.iterdir():
             if child.is_dir() and child.suffix == ".lance":
-                datasets[child.stem] = child
-            elif child.is_file() and child.suffix in valid_suffixes:
                 datasets[child.stem] = child
         return datasets
 
     def _dataset_path(self, name: str) -> "Path":
         """Create the canonical path for a dataset."""
         safe_name = name.replace("/", "_")
-        suffix = ".lance" if self._get_lance() else ".arrow"
-        return self._root / f"{safe_name}{suffix}"
+        return self._root / f"{safe_name}.lance"
 
-    def _get_lance(self) -> Optional[ModuleType]:
+    def _get_lance(self) -> ModuleType:
         if not self._lance_attempted:
             self._lance_attempted = True
             try:
                 module = import_module("lance")
-            except ImportError:
-                module = None
-            else:
-                has_writer = hasattr(module, "write_dataset")
-                has_loader = hasattr(module, "dataset")
-                if not (has_writer and has_loader):
-                    LOGGER.warning(
-                        "Installed `lance` package missing dataset APIs; "
-                        "falling back to Feather storage."
-                    )
-                    module = None
-            self._lance = module
-            if module is None:
-                LOGGER.debug(
-                    "Lance storage unavailable; using Feather files under %s.",
-                    self._root,
+            except ImportError as e:
+                raise ImportError(
+                    "Lance module is required but not installed. "
+                    "Install it with: pip install pylance"
+                ) from e
+
+            has_loader = hasattr(module, "dataset")
+            if not (has_loader):
+                raise ImportError(
+                    "Installed `lance` package is missing required dataset APIs."
                 )
+            self._lance = module
+        if self._lance is None:
+            raise ImportError("Lance module failed to load")
         return self._lance
 
     def load_tables(
@@ -90,7 +83,6 @@ class LanceGraphStore:
     ) -> Mapping[str, "pa.Table"]:
         """Load Lance datasets as PyArrow tables."""
         lance = self._get_lance()
-        use_lance = lance is not None
 
         self.ensure_layout()
         available = self.list_datasets()
@@ -101,13 +93,8 @@ class LanceGraphStore:
             path = available.get(name, self._dataset_path(name))
             if not path.exists():
                 raise FileNotFoundError(f"Dataset '{name}' not found at {path}")
-            if path.suffix == ".lance" and use_lance:
-                dataset = lance.dataset(str(path))  # type: ignore[union-attr]
-                table = dataset.scanner().to_table()
-            else:
-                import pyarrow.feather as feather
-
-                table = feather.read_table(str(path))
+            dataset = lance.dataset(str(path))
+            table = dataset.scanner().to_table()
             tables[name] = table
         return tables
 
@@ -123,10 +110,5 @@ class LanceGraphStore:
                     f"Dataset '{name}' must be a pyarrow.Table (got {type(table)!r})"
                 )
             path = self._dataset_path(name)
-            if path.suffix == ".lance" and lance is not None:
-                mode = "overwrite" if path.exists() else "create"
-                lance.write_dataset(table, str(path), mode=mode)  # type: ignore[union-attr]
-            else:
-                import pyarrow.feather as feather
-
-                feather.write_feather(table, str(path))
+            mode = "overwrite" if path.exists() else "create"
+            lance.write_dataset(table, str(path), mode=mode)
