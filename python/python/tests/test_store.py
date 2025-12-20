@@ -3,15 +3,13 @@
 
 """Unit tests for LanceGraphStore."""
 
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
+import lance
 import pyarrow as pa
 import pytest
 from knowledge_graph.config import KnowledgeGraphConfig
 from knowledge_graph.store import LanceGraphStore
-
-import lance
 
 
 @pytest.fixture
@@ -143,7 +141,7 @@ class TestBasicOperations:
         assert "/" not in path.name
 
     def test_list_datasets_returns_empty_when_root_not_exists(self, store):
-        """Test that list_datasets returns empty dict when storage path doesn't exist."""
+        """Test that list_datasets returns empty dict when root doesn't exist."""
         datasets = store.list_datasets()
 
         assert datasets == {}
