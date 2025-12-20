@@ -27,7 +27,7 @@ datafusion-common = "49.0.2"
 datafusion-expr = "49.0.2"
 datafusion-sql = "49.0.2"
 datafusion-functions-aggregate = "49.0.2"
-lance-core = "0.37.0"
+lance-core = "1.0.0"
 nom = "7.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
