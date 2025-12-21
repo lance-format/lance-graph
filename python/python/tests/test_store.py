@@ -352,3 +352,78 @@ class TestIntegration:
                 store.load_tables(["Person"])
 
             assert "Lance module is required" in str(exc_info.value)
+
+
+class TestS3Support:
+    """Tests for S3/Cloud storage support."""
+
+    @pytest.fixture
+    def s3_config(self):
+        return KnowledgeGraphConfig(
+            storage_path="s3://bucket/graph",
+            schema_path="s3://bucket/graph/graph.yaml"
+        )
+
+    @pytest.fixture
+    def s3_store(self, s3_config):
+        with patch("knowledge_graph.store.fsspec") as mock_fsspec:
+            # Setup default mock behavior for init
+            mock_fs = Mock()
+            mock_fsspec.core.url_to_fs.return_value = (mock_fs, "bucket/graph")
+            store = LanceGraphStore(s3_config)
+            # Attach the mock to the store instance for tests to configure further
+            store._mock_fsspec = mock_fsspec
+            store._mock_fs = mock_fs
+            return store
+
+    def test_init_with_s3_path(self, s3_store):
+        """Test initializing store with S3 path."""
+        assert s3_store.root == "s3://bucket/graph"
+        assert isinstance(s3_store.root, str)
+        # Verify fsspec was called
+        s3_store._mock_fsspec.core.url_to_fs.assert_called_with("s3://bucket/graph")
+
+    def test_ensure_layout_s3_noop(self, s3_store):
+        """Test ensure_layout calls makedirs on fs."""
+        s3_store.ensure_layout()
+        s3_store._mock_fs.makedirs.assert_called_with("bucket/graph", exist_ok=True)
+
+    def test_dataset_path_s3(self, s3_store):
+        """Test dataset path generation for S3."""
+        path = s3_store._dataset_path("Person")
+        assert path == "s3://bucket/graph/Person.lance"
+
+    def test_dataset_path_s3_nested(self, s3_store):
+        """Test dataset path generation with nested names for S3."""
+        path = s3_store._dataset_path("foo/bar")
+        assert path == "s3://bucket/graph/foo_bar.lance"
+
+    def test_list_datasets_s3(self, s3_store):
+        """Test listing datasets from S3."""
+        mock_fs = s3_store._mock_fs
+        mock_fs.exists.return_value = True
+
+        # Mock fs.ls results
+        info1 = {"name": "bucket/graph/Person.lance", "type": "directory"}
+        info2 = {"name": "bucket/graph/Company.lance", "type": "directory"}
+        info3 = {"name": "bucket/graph/other.txt", "type": "file"}
+
+        mock_fs.ls.return_value = [info1, info2, info3]
+
+        datasets = s3_store.list_datasets()
+
+        assert len(datasets) == 2
+        assert "Person" in datasets
+        assert "Company" in datasets
+        assert datasets["Person"] == "s3://bucket/graph/Person.lance"
+        assert datasets["Company"] == "s3://bucket/graph/Company.lance"
+
+    def test_list_datasets_s3_handles_error(self, s3_store):
+        """Test list_datasets handles S3 errors gracefully."""
+        mock_fs = s3_store._mock_fs
+        # Mocking exists raising exception or returning False
+        # If exists raises, it should be caught if it's "not found"
+        mock_fs.exists.side_effect = Exception("File not found")
+
+        datasets = s3_store.list_datasets()
+        assert datasets == {}

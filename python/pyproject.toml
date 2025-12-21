@@ -9,6 +9,8 @@ dependencies = [
     "pydantic>=2.0.0",
     "openai>=1.52.0",
     "pylance",
+    "fsspec",
+    "gcsfs",
 ]
 description = "Python bindings for the lance-graph Cypher engine"
 authors = [{ name = "Lance Devs", email = "dev@lancedb.com" }]

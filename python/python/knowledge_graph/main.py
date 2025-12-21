@@ -30,12 +30,8 @@ def init_graph(config: "KnowledgeGraphConfig") -> None:
     config.ensure_directories()
     LanceGraphStore(config).ensure_layout()
     schema_path = config.resolved_schema_path()
-    if schema_path.exists():
-        print(f"Schema already present at {schema_path}")
-        return
 
-    schema_stub = """\
-# Lance knowledge graph schema
+    schema_stub = """# Lance knowledge graph schema
 #
 # Define node labels and relationship mappings. Example:
 # nodes:
@@ -56,6 +52,28 @@ relationships: {}
 entity_types: []
 relationship_types: []
 """
+
+    if isinstance(schema_path, str):
+        import pyarrow.fs
+
+        try:
+            fs, path = pyarrow.fs.FileSystem.from_uri(schema_path)
+            info = fs.get_file_info(path)
+            if info.type != pyarrow.fs.FileType.NotFound:
+                print(f"Schema already present at {schema_path}")
+                return
+            with fs.open_output_stream(path) as f:
+                f.write(schema_stub.encode("utf-8"))
+            print(f"Created schema template at {schema_path}")
+            return
+        except Exception as e:
+            print(f"Failed to initialize schema at {schema_path}: {e}", file=sys.stderr)
+            return
+
+    if schema_path.exists():
+        print(f"Schema already present at {schema_path}")
+        return
+
     schema_path.write_text(schema_stub, encoding="utf-8")
     print(f"Created schema template at {schema_path}")
 

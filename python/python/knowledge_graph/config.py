@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 import yaml
+import pyarrow.fs
 from lance_graph import GraphConfig
 
 
@@ -14,25 +15,33 @@ from lance_graph import GraphConfig
 class KnowledgeGraphConfig:
     """Root configuration for the Lance-backed knowledge graph."""
 
-    storage_path: Path
-    schema_path: Optional[Path] = None
+    storage_path: Path | str
+    schema_path: Optional[Path | str] = None
     default_dataset: Optional[str] = None
     entity_types: tuple[str, ...] = field(default_factory=tuple)
     relationship_types: tuple[str, ...] = field(default_factory=tuple)
+    storage_options: Optional[dict[str, str]] = None
 
     @classmethod
     def from_root(
         cls,
-        root: Path,
+        root: Path | str,
         *,
         default_dataset: Optional[str] = None,
+        storage_options: Optional[dict[str, str]] = None,
     ) -> KnowledgeGraphConfig:
         """Create a configuration anchored at ``root``."""
-        schema_path = root / "graph.yaml"
+        if isinstance(root, str) and "://" in root:
+            schema_path = f"{root.rstrip('/')}/graph.yaml"
+        else:
+            if isinstance(root, str):
+                root = Path(root)
+            schema_path = root / "graph.yaml"
         return cls(
             storage_path=root,
             schema_path=schema_path,
             default_dataset=default_dataset,
+            storage_options=storage_options,
         )
 
     @classmethod
@@ -40,16 +49,32 @@ class KnowledgeGraphConfig:
         """Use a storage folder relative to the current working directory."""
         return cls.from_root(Path.cwd() / "knowledge_graph_data")
 
-    def resolved_schema_path(self) -> Path:
+    def resolved_schema_path(self) -> Path | str:
         """Return the expected path to the graph schema definition."""
-        return self.schema_path or (self.storage_path / "graph.yaml")
+        if self.schema_path:
+            return self.schema_path
+        if isinstance(self.storage_path, str) and "://" in self.storage_path:
+            return f"{self.storage_path.rstrip('/')}/graph.yaml"
+        if isinstance(self.storage_path, str):
+            return Path(self.storage_path) / "graph.yaml"
+        return self.storage_path / "graph.yaml"
 
     def ensure_directories(self) -> None:
         """Create required directories for persistent storage."""
-        self.storage_path.mkdir(parents=True, exist_ok=True)
-        self.resolved_schema_path().parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(self.storage_path, str) and "://" in self.storage_path:
+            return
 
-    def with_schema(self, schema_path: Path) -> KnowledgeGraphConfig:
+        path = (
+            self.storage_path
+            if isinstance(self.storage_path, Path)
+            else Path(self.storage_path)
+        )
+        path.mkdir(parents=True, exist_ok=True)
+        schema = self.resolved_schema_path()
+        if isinstance(schema, Path):
+            schema.parent.mkdir(parents=True, exist_ok=True)
+
+    def with_schema(self, schema_path: Path | str) -> KnowledgeGraphConfig:
         """Return a copy of the config with an explicit schema path."""
         return KnowledgeGraphConfig(
             storage_path=self.storage_path,
@@ -57,6 +82,7 @@ class KnowledgeGraphConfig:
             default_dataset=self.default_dataset,
             entity_types=self.entity_types,
             relationship_types=self.relationship_types,
+            storage_options=self.storage_options,
         )
 
     def load_graph_config(self) -> GraphConfig:
@@ -84,12 +110,26 @@ class KnowledgeGraphConfig:
 
     def _load_schema_payload(self) -> Mapping[str, Any]:
         schema_path = self.resolved_schema_path()
-        if not schema_path.exists():
-            raise FileNotFoundError(
-                f"Graph schema configuration not found at {schema_path}"
-            )
-        with schema_path.open("r", encoding="utf-8") as handle:
-            payload = yaml.safe_load(handle) or {}
+        if isinstance(schema_path, str) and "://" in schema_path:
+            fs, path = pyarrow.fs.FileSystem.from_uri(schema_path)
+            try:
+                with fs.open_input_stream(path) as f:
+                    payload = yaml.safe_load(f.read()) or {}
+            except FileNotFoundError:
+                raise FileNotFoundError(
+                    f"Graph schema configuration not found at {schema_path}"
+                )
+        else:
+            if isinstance(schema_path, str):
+                schema_path = Path(schema_path)
+
+            if not schema_path.exists():
+                raise FileNotFoundError(
+                    f"Graph schema configuration not found at {schema_path}"
+                )
+            with schema_path.open("r", encoding="utf-8") as handle:
+                payload = yaml.safe_load(handle) or {}
+
         if not isinstance(payload, Mapping):
             raise ValueError("Graph schema configuration must be a mapping")
         return payload  # type: ignore[return-value]
