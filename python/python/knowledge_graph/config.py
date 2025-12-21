@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-import yaml
 import pyarrow.fs
+import yaml
 from lance_graph import GraphConfig
 
 

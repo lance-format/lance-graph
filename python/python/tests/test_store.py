@@ -360,8 +360,7 @@ class TestS3Support:
     @pytest.fixture
     def s3_config(self):
         return KnowledgeGraphConfig(
-            storage_path="s3://bucket/graph",
-            schema_path="s3://bucket/graph/graph.yaml"
+            storage_path="s3://bucket/graph", schema_path="s3://bucket/graph/graph.yaml"
         )
 
     @pytest.fixture

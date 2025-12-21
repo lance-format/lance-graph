@@ -36,7 +36,8 @@ class LanceGraphStore:
                 str(self._root), **(self.config.storage_options or {})
             )
         except ImportError:
-            # Re-raise explicit ImportError if protocol driver (e.g. gcsfs, s3fs) is missing
+            # Re-raise explicit ImportError if protocol driver (e.g. gcsfs, s3fs)
+            # is missing
             raise
 
     @property
@@ -55,7 +56,8 @@ class LanceGraphStore:
             self._fs.makedirs(self._fs_path, exist_ok=True)
         except Exception:
             # S3/GCS might not support directory creation or it might be implicit.
-            # We treat failure here as non-fatal if the path is actually accessible later,
+            # We treat failure here as non-fatal if the path is actually accessible
+            # later,
             # but usually makedirs is safe on object stores (no-op).
             pass
 

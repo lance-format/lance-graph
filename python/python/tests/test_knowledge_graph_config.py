@@ -1,8 +1,9 @@
-import pyarrow as pa
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from knowledge_graph.config import build_graph_config_from_mapping, KnowledgeGraphConfig
+
+import pyarrow as pa
+import pytest
+from knowledge_graph.config import KnowledgeGraphConfig, build_graph_config_from_mapping
 from lance_graph import CypherQuery
 
 
@@ -89,7 +90,10 @@ class TestKnowledgeGraphConfigPathSupport:
 
         # Mock filesystem
         mock_fs = MagicMock()
-        mock_pyarrow.fs.FileSystem.from_uri.return_value = (mock_fs, "bucket/graph/graph.yaml")
+        mock_pyarrow.fs.FileSystem.from_uri.return_value = (
+            mock_fs,
+            "bucket/graph/graph.yaml",
+        )
 
         # Mock file content
         mock_input_stream = MagicMock()
@@ -100,5 +104,7 @@ class TestKnowledgeGraphConfigPathSupport:
         payload = config._load_schema_payload()
 
         assert payload == {"nodes": {"Person": "id"}}
-        mock_pyarrow.fs.FileSystem.from_uri.assert_called_with("s3://bucket/graph/graph.yaml")
+        mock_pyarrow.fs.FileSystem.from_uri.assert_called_with(
+            "s3://bucket/graph/graph.yaml"
+        )
         mock_fs.open_input_stream.assert_called_with("bucket/graph/graph.yaml")
