@@ -60,7 +60,13 @@ pub(crate) fn to_df_boolean_expr(expr: &BooleanExpression) -> Expr {
         ))),
         BE::IsNull(expression) => Expr::IsNull(Box::new(to_df_value_expr(expression))),
         BE::IsNotNull(expression) => Expr::IsNotNull(Box::new(to_df_value_expr(expression))),
-        _ => lit(true),
+        BE::Like { expression, pattern } => Expr::Like(datafusion::logical_expr::Like {
+            negated: false,
+            expr: Box::new(to_df_value_expr(expression)),
+            pattern: Box::new(lit(pattern.clone())),
+            escape_char: None,
+            case_insensitive: false,
+        }),
     }
 }
 
@@ -412,6 +418,55 @@ mod tests {
         } else {
             panic!("Expected InList expression");
         }
+    }
+
+    #[test]
+    fn test_boolean_expr_like() {
+        let expr = BooleanExpression::Like {
+            expression: ValueExpression::Property(PropertyRef {
+                variable: "p".into(),
+                property: "name".into(),
+            }),
+            pattern: "A%".into(),
+        };
+
+        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr) {
+            assert!(!like_expr.negated, "Should not be negated");
+            assert!(!like_expr.case_insensitive, "Should be case sensitive");
+            assert_eq!(like_expr.escape_char, None, "Should have no escape char");
+            match *like_expr.expr {
+                Expr::Column(ref col_expr) => {
+                    assert_eq!(col_expr.name(), "p__name");
+                }
+                other => panic!("Expected column expression, got {:?}", other),
+            }
+            // Check pattern is a literal
+            match *like_expr.pattern {
+                Expr::Literal(..) => {} // Success
+                other => panic!("Expected literal pattern, got {:?}", other),
+            }
+        } else {
+            panic!("Expected Like expression");
+        }
+    }
+
+    #[test]
+    fn test_boolean_expr_like_with_wildcard() {
+        let expr = BooleanExpression::Like {
+            expression: ValueExpression::Property(PropertyRef {
+                variable: "p".into(),
+                property: "email".into(),
+            }),
+            pattern: "%@example.com".into(),
+        };
+
+        let df_expr = to_df_boolean_expr(&expr);
+        let s = format!("{:?}", df_expr);
+        assert!(
+            s.contains("Like") || s.contains("like"),
+            "Should be a LIKE expression"
+        );
+        assert!(s.contains("p__email"), "Should contain column reference");
     }
 
     // ========================================================================

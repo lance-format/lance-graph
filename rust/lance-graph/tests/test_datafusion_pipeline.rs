@@ -3776,3 +3776,134 @@ async fn test_datafusion_is_not_null_relationship_property() {
         );
     }
 }
+
+// ============================================================================
+// LIKE Pattern Matching Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_datafusion_like_contains_match() {
+    // Test LIKE with contains pattern (anywhere in string)
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    let query = CypherQuery::new(
+        "MATCH (p:Person) \
+         WHERE p.city LIKE '%ea%' \
+         RETURN p.name ORDER BY p.name",
+    )
+    .unwrap()
+    .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should match: Seattle (Eve)
+    assert_eq!(result.num_rows(), 1);
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(names.value(0), "Eve");
+}
+
+#[tokio::test]
+async fn test_datafusion_like_with_and_condition() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    let query = CypherQuery::new(
+        "MATCH (p:Person) \
+         WHERE p.age > 30 AND p.name LIKE '%e' \
+         RETURN p.name",
+    )
+    .unwrap()
+    .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should match: Charlie (age 30 is NOT > 30, so excluded)
+    // Bob (age 35), David (age 40), Eve (age 28 not > 30)
+    // Names ending with 'e': Alice, Charlie, Eve
+    // age > 30 AND name ends with 'e': None (Alice is 25, Charlie is 30, Eve is 28)
+    assert_eq!(result.num_rows(), 0);
+}
+
+#[tokio::test]
+async fn test_datafusion_like_in_relationship_query() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+    let knows_batch = create_knows_dataset();
+
+    let query = CypherQuery::new(
+        "MATCH (a:Person)-[r:KNOWS]->(b:Person) \
+         WHERE a.name LIKE 'A%' \
+         RETURN a.name, b.name ORDER BY b.name",
+    )
+    .unwrap()
+    .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+    datasets.insert("KNOWS".to_string(), knows_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Alice knows Bob and Charlie
+    assert_eq!(result.num_rows(), 2);
+    let a_names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    let b_names = result
+        .column(1)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    assert_eq!(a_names.value(0), "Alice");
+    assert_eq!(b_names.value(0), "Bob");
+    assert_eq!(a_names.value(1), "Alice");
+    assert_eq!(b_names.value(1), "Charlie");
+}
+
+#[tokio::test]
+async fn test_datafusion_like_case_sensitive() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    let query = CypherQuery::new(
+        "MATCH (p:Person) \
+         WHERE p.name LIKE 'a%' \
+         RETURN p.name",
+    )
+    .unwrap()
+    .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should not match 'Alice' (lowercase 'a' vs uppercase 'A')
+    assert_eq!(result.num_rows(), 0);
+}

@@ -329,6 +329,18 @@ fn comparison_expression(input: &str) -> IResult<&str, BooleanExpression> {
             },
         ));
     }
+    // Match LIKE pattern
+    if let Ok((input_after_like, (_, _, pattern))) =
+        tuple((tag_no_case("LIKE"), multispace0, string_literal))(input)
+    {
+        return Ok((
+            input_after_like,
+            BooleanExpression::Like {
+                expression: left,
+                pattern,
+            },
+        ));
+    }
     // Match is null
     if let Ok((rest, ())) = is_null_comparison(input) {
         return Ok((rest, BooleanExpression::IsNull(left_clone)));
@@ -1016,6 +1028,75 @@ mod tests {
                 assert_eq!(args.len(), 2);
             }
             _ => panic!("Expected Function expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_like_pattern() {
+        let query = "MATCH (n:Person) WHERE n.name LIKE 'A%' RETURN n.name";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), "LIKE pattern should parse successfully");
+
+        let ast = result.unwrap();
+        let where_clause = ast.where_clause.expect("Expected WHERE clause");
+
+        match where_clause.expression {
+            BooleanExpression::Like { expression, pattern } => {
+                match expression {
+                    ValueExpression::Property(prop) => {
+                        assert_eq!(prop.variable, "n");
+                        assert_eq!(prop.property, "name");
+                    }
+                    _ => panic!("Expected property expression"),
+                }
+                assert_eq!(pattern, "A%");
+            }
+            _ => panic!("Expected LIKE expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_like_with_double_quotes() {
+        let query = r#"MATCH (n:Person) WHERE n.email LIKE "%@example.com" RETURN n.email"#;
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), "LIKE with double quotes should parse");
+
+        let ast = result.unwrap();
+        let where_clause = ast.where_clause.expect("Expected WHERE clause");
+
+        match where_clause.expression {
+            BooleanExpression::Like { pattern, .. } => {
+                assert_eq!(pattern, "%@example.com");
+            }
+            _ => panic!("Expected LIKE expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_like_in_complex_where() {
+        let query = "MATCH (n:Person) WHERE n.age > 20 AND n.name LIKE 'J%' RETURN n.name";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), "LIKE in complex WHERE should parse");
+
+        let ast = result.unwrap();
+        let where_clause = ast.where_clause.expect("Expected WHERE clause");
+
+        match where_clause.expression {
+            BooleanExpression::And(left, right) => {
+                // Left should be age > 20
+                match *left {
+                    BooleanExpression::Comparison { .. } => {}
+                    _ => panic!("Expected comparison on left"),
+                }
+                // Right should be LIKE
+                match *right {
+                    BooleanExpression::Like { pattern, .. } => {
+                        assert_eq!(pattern, "J%");
+                    }
+                    _ => panic!("Expected LIKE expression on right"),
+                }
+            }
+            _ => panic!("Expected AND expression"),
         }
     }
 }
