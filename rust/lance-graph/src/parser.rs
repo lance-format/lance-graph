@@ -1041,7 +1041,10 @@ mod tests {
         let where_clause = ast.where_clause.expect("Expected WHERE clause");
 
         match where_clause.expression {
-            BooleanExpression::Like { expression, pattern } => {
+            BooleanExpression::Like {
+                expression,
+                pattern,
+            } => {
                 match expression {
                     ValueExpression::Property(prop) => {
                         assert_eq!(prop.variable, "n");

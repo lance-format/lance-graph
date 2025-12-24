@@ -60,7 +60,10 @@ pub(crate) fn to_df_boolean_expr(expr: &BooleanExpression) -> Expr {
         ))),
         BE::IsNull(expression) => Expr::IsNull(Box::new(to_df_value_expr(expression))),
         BE::IsNotNull(expression) => Expr::IsNotNull(Box::new(to_df_value_expr(expression))),
-        BE::Like { expression, pattern } => Expr::Like(datafusion::logical_expr::Like {
+        BE::Like {
+            expression,
+            pattern,
+        } => Expr::Like(datafusion::logical_expr::Like {
             negated: false,
             expr: Box::new(to_df_value_expr(expression)),
             pattern: Box::new(lit(pattern.clone())),
