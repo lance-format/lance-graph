@@ -36,7 +36,7 @@ snafu = "0.8"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async", "async_tokio", "html_reports"] }
 futures = "0.3"
-lance = "0.37.0"
+lance = "1.0.0"
 tempfile = "3"
 tokio = { version = "1.37", features = ["macros", "rt-multi-thread"] }
 
