@@ -35,6 +35,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: python
+          cache-targets: false
       - name: Install dependencies
         run: |
           sudo apt update

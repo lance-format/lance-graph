@@ -37,6 +37,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust/lance-graph
+          cache-targets: false
       - name: Install dependencies
         run: |
           sudo apt update
