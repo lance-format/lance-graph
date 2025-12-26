@@ -17,7 +17,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use arrow_array::{Int32Array, RecordBatch, StringArray};
+use arrow_array::{Int32Array, RecordBatch, RecordBatchIterator, StringArray};
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use futures::TryStreamExt;
@@ -168,7 +168,7 @@ fn bench_cypher_execution(c: &mut Criterion) {
 
         rt.block_on(async {
             Dataset::write(
-                arrow_array::RecordBatchIterator::new(
+                RecordBatchIterator::new(
                     vec![Ok(person_b.clone())].into_iter(),
                     person_b.schema(),
                 ),
@@ -181,7 +181,7 @@ fn bench_cypher_execution(c: &mut Criterion) {
             .await
             .unwrap();
             Dataset::write(
-                arrow_array::RecordBatchIterator::new(
+                RecordBatchIterator::new(
                     vec![Ok(friend_b.clone())].into_iter(),
                     friend_b.schema(),
                 ),
@@ -230,7 +230,6 @@ fn bench_cypher_execution(c: &mut Criterion) {
         let friend_b = make_friendship_batch(1_000_000);
 
         rt.block_on(async {
-            use arrow_array::RecordBatchIterator;
             Dataset::write(
                 RecordBatchIterator::new(vec![Ok(person_b.clone())].into_iter(), person_b.schema()),
                 person_path.to_str().unwrap(),

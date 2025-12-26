@@ -11,10 +11,10 @@ keywords = ["lance", "graph", "cypher", "query", "datafusion"]
 categories = ["database", "data-structures", "science"]
 
 [dependencies]
-arrow = { version = "55.2", features = ["prettyprint"] }
-arrow-array = "55.2"
-arrow-schema = "55.2"
-datafusion = { version = "49.0.2", default-features = false, features = [
+arrow = { version = "56.2", features = ["prettyprint"] }
+arrow-array = "56.2"
+arrow-schema = "56.2"
+datafusion = { version = "50.3", default-features = false, features = [
     "nested_expressions",
     "regex_expressions",
     "unicode_expressions",
@@ -23,10 +23,10 @@ datafusion = { version = "49.0.2", default-features = false, features = [
     "datetime_expressions",
     "string_expressions",
 ] }
-datafusion-common = "49.0.2"
-datafusion-expr = "49.0.2"
-datafusion-sql = "49.0.2"
-datafusion-functions-aggregate = "49.0.2"
+datafusion-common = "50.3"
+datafusion-expr = "50.3"
+datafusion-sql = "50.3"
+datafusion-functions-aggregate = "50.3"
 lance-core = "1.0.0"
 nom = "7.1"
 serde = { version = "1", features = ["derive"] }
