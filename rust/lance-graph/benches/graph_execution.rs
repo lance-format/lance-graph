@@ -168,10 +168,7 @@ fn bench_cypher_execution(c: &mut Criterion) {
 
         rt.block_on(async {
             Dataset::write(
-                RecordBatchIterator::new(
-                    vec![Ok(person_b.clone())].into_iter(),
-                    person_b.schema(),
-                ),
+                RecordBatchIterator::new(vec![Ok(person_b.clone())].into_iter(), person_b.schema()),
                 person_path.to_str().unwrap(),
                 Some(WriteParams {
                     mode: WriteMode::Create,
@@ -181,10 +178,7 @@ fn bench_cypher_execution(c: &mut Criterion) {
             .await
             .unwrap();
             Dataset::write(
-                RecordBatchIterator::new(
-                    vec![Ok(friend_b.clone())].into_iter(),
-                    friend_b.schema(),
-                ),
+                RecordBatchIterator::new(vec![Ok(friend_b.clone())].into_iter(), friend_b.schema()),
                 friend_path.to_str().unwrap(),
                 Some(WriteParams {
                     mode: WriteMode::Create,
