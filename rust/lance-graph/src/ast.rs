@@ -223,6 +223,21 @@ pub enum BooleanExpression {
         expression: ValueExpression,
         pattern: String,
     },
+    /// CONTAINS substring matching
+    Contains {
+        expression: ValueExpression,
+        substring: String,
+    },
+    /// STARTS WITH prefix matching
+    StartsWith {
+        expression: ValueExpression,
+        prefix: String,
+    },
+    /// ENDS WITH suffix matching
+    EndsWith {
+        expression: ValueExpression,
+        suffix: String,
+    },
     /// IS NULL pattern matching
     IsNull(ValueExpression),
     /// IS NOT NULL pattern matching

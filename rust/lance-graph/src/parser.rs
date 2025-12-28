@@ -341,6 +341,52 @@ fn comparison_expression(input: &str) -> IResult<&str, BooleanExpression> {
             },
         ));
     }
+    // Match CONTAINS substring
+    if let Ok((input_after_contains, (_, _, substring))) =
+        tuple((tag_no_case("CONTAINS"), multispace0, string_literal))(input)
+    {
+        return Ok((
+            input_after_contains,
+            BooleanExpression::Contains {
+                expression: left,
+                substring,
+            },
+        ));
+    }
+    // Match STARTS WITH prefix (note: multi-word operator)
+    if let Ok((input_after_starts, (_, _, _, _, prefix))) = tuple((
+        tag_no_case("STARTS"),
+        multispace1,
+        tag_no_case("WITH"),
+        multispace0,
+        string_literal,
+    ))(input)
+    {
+        return Ok((
+            input_after_starts,
+            BooleanExpression::StartsWith {
+                expression: left,
+                prefix,
+            },
+        ));
+    }
+    // Match ENDS WITH suffix (note: multi-word operator)
+    if let Ok((input_after_ends, (_, _, _, _, suffix))) = tuple((
+        tag_no_case("ENDS"),
+        multispace1,
+        tag_no_case("WITH"),
+        multispace0,
+        string_literal,
+    ))(input)
+    {
+        return Ok((
+            input_after_ends,
+            BooleanExpression::EndsWith {
+                expression: left,
+                suffix,
+            },
+        ));
+    }
     // Match is null
     if let Ok((rest, ())) = is_null_comparison(input) {
         return Ok((rest, BooleanExpression::IsNull(left_clone)));
@@ -1097,6 +1143,123 @@ mod tests {
                         assert_eq!(pattern, "J%");
                     }
                     _ => panic!("Expected LIKE expression on right"),
+                }
+            }
+            _ => panic!("Expected AND expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_contains() {
+        let query = "MATCH (n:Person) WHERE n.name CONTAINS 'Jo' RETURN n.name";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok());
+
+        let query = result.unwrap();
+        assert!(query.where_clause.is_some());
+
+        match &query.where_clause.unwrap().expression {
+            BooleanExpression::Contains {
+                expression,
+                substring,
+            } => {
+                assert_eq!(substring, "Jo");
+                match expression {
+                    ValueExpression::Property(prop) => {
+                        assert_eq!(prop.variable, "n");
+                        assert_eq!(prop.property, "name");
+                    }
+                    _ => panic!("Expected property reference"),
+                }
+            }
+            _ => panic!("Expected CONTAINS expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_starts_with() {
+        let query = "MATCH (n:Person) WHERE n.name STARTS WITH 'Alice' RETURN n.name";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok());
+
+        let query = result.unwrap();
+        assert!(query.where_clause.is_some());
+
+        match &query.where_clause.unwrap().expression {
+            BooleanExpression::StartsWith { expression, prefix } => {
+                assert_eq!(prefix, "Alice");
+                match expression {
+                    ValueExpression::Property(prop) => {
+                        assert_eq!(prop.variable, "n");
+                        assert_eq!(prop.property, "name");
+                    }
+                    _ => panic!("Expected property reference"),
+                }
+            }
+            _ => panic!("Expected STARTS WITH expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_ends_with() {
+        let query = "MATCH (n:Person) WHERE n.email ENDS WITH '@example.com' RETURN n.email";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok());
+
+        let query = result.unwrap();
+        assert!(query.where_clause.is_some());
+
+        match &query.where_clause.unwrap().expression {
+            BooleanExpression::EndsWith { expression, suffix } => {
+                assert_eq!(suffix, "@example.com");
+                match expression {
+                    ValueExpression::Property(prop) => {
+                        assert_eq!(prop.variable, "n");
+                        assert_eq!(prop.property, "email");
+                    }
+                    _ => panic!("Expected property reference"),
+                }
+            }
+            _ => panic!("Expected ENDS WITH expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_contains_case_insensitive_keyword() {
+        let query = "MATCH (n:Person) WHERE n.name contains 'test' RETURN n.name";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok());
+
+        match &result.unwrap().where_clause.unwrap().expression {
+            BooleanExpression::Contains { substring, .. } => {
+                assert_eq!(substring, "test");
+            }
+            _ => panic!("Expected CONTAINS expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_string_operators_in_complex_where() {
+        let query =
+            "MATCH (n:Person) WHERE n.name CONTAINS 'Jo' AND n.email ENDS WITH '.com' RETURN n";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok());
+
+        match &result.unwrap().where_clause.unwrap().expression {
+            BooleanExpression::And(left, right) => {
+                // Left should be CONTAINS
+                match **left {
+                    BooleanExpression::Contains { ref substring, .. } => {
+                        assert_eq!(substring, "Jo");
+                    }
+                    _ => panic!("Expected CONTAINS expression on left"),
+                }
+                // Right should be ENDS WITH
+                match **right {
+                    BooleanExpression::EndsWith { ref suffix, .. } => {
+                        assert_eq!(suffix, ".com");
+                    }
+                    _ => panic!("Expected ENDS WITH expression on right"),
                 }
             }
             _ => panic!("Expected AND expression"),

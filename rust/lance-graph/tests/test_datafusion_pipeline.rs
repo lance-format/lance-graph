@@ -3778,7 +3778,7 @@ async fn test_datafusion_is_not_null_relationship_property() {
 }
 
 // ============================================================================
-// LIKE Pattern Matching Tests
+// String Operator Tests
 // ============================================================================
 
 #[tokio::test]
@@ -3906,4 +3906,212 @@ async fn test_datafusion_like_case_sensitive() {
 
     // Should not match 'Alice' (lowercase 'a' vs uppercase 'A')
     assert_eq!(result.num_rows(), 0);
+}
+
+#[tokio::test]
+async fn test_datafusion_contains_basic() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    let query = CypherQuery::new("MATCH (p:Person) WHERE p.name CONTAINS 'li' RETURN p.name")
+        .unwrap()
+        .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should match "Alice" and "Charlie" (contains "li")
+    assert_eq!(result.num_rows(), 2);
+
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    let mut name_vec: Vec<String> = (0..result.num_rows())
+        .map(|i| names.value(i).to_string())
+        .collect();
+    name_vec.sort();
+
+    assert_eq!(name_vec, vec!["Alice", "Charlie"]);
+}
+
+#[tokio::test]
+async fn test_datafusion_starts_with_basic() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    let query = CypherQuery::new("MATCH (p:Person) WHERE p.name STARTS WITH 'A' RETURN p.name")
+        .unwrap()
+        .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should match only "Alice"
+    assert_eq!(result.num_rows(), 1);
+
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    assert_eq!(names.value(0), "Alice");
+}
+
+#[tokio::test]
+async fn test_datafusion_ends_with_basic() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    let query = CypherQuery::new("MATCH (p:Person) WHERE p.name ENDS WITH 'e' RETURN p.name")
+        .unwrap()
+        .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should match "Alice", "Charlie", and "Eve" (ends with "e")
+    assert_eq!(result.num_rows(), 3);
+
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    let mut name_vec: Vec<String> = (0..result.num_rows())
+        .map(|i| names.value(i).to_string())
+        .collect();
+    name_vec.sort();
+
+    assert_eq!(name_vec, vec!["Alice", "Charlie", "Eve"]);
+}
+
+#[tokio::test]
+async fn test_datafusion_contains_case_sensitive() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    let query = CypherQuery::new("MATCH (p:Person) WHERE p.name CONTAINS 'A' RETURN p.name")
+        .unwrap()
+        .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should match only "Alice" (capital A)
+    // No other names contain capital 'A'
+    assert_eq!(result.num_rows(), 1);
+
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    assert_eq!(names.value(0), "Alice");
+}
+
+#[tokio::test]
+async fn test_datafusion_string_operators_combined() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    let query = CypherQuery::new(
+        "MATCH (p:Person) WHERE p.name STARTS WITH 'C' AND p.name ENDS WITH 'e' RETURN p.name",
+    )
+    .unwrap()
+    .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should match only "Charlie" (starts with 'C' and ends with 'e')
+    assert_eq!(result.num_rows(), 1);
+
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    assert_eq!(names.value(0), "Charlie");
+}
+
+#[tokio::test]
+async fn test_datafusion_contains_in_relationship_query() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+    let knows_batch = create_knows_dataset();
+
+    let query = CypherQuery::new("MATCH (a:Person)-[:KNOWS]->(b:Person) WHERE a.name CONTAINS 'li' AND b.age > 30 RETURN a.name, b.name")
+        .unwrap()
+        .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+    datasets.insert("KNOWS".to_string(), knows_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Alice knows Bob (35) and Charlie (30 - not > 30)
+    // Charlie knows David (40)
+    // So we should get: Alice->Bob, Charlie->David
+    assert_eq!(result.num_rows(), 2);
+
+    let a_names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    let b_names = result
+        .column(1)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    let mut pairs: Vec<(String, String)> = (0..result.num_rows())
+        .map(|i| (a_names.value(i).to_string(), b_names.value(i).to_string()))
+        .collect();
+    pairs.sort();
+
+    assert_eq!(
+        pairs,
+        vec![
+            ("Alice".to_string(), "Bob".to_string()),
+            ("Charlie".to_string(), "David".to_string())
+        ]
+    );
 }
