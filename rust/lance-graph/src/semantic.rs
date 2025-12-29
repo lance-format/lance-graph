@@ -247,6 +247,9 @@ impl SemanticAnalyzer {
             BooleanExpression::Like { expression, .. } => {
                 self.analyze_value_expression(expression)?;
             }
+            BooleanExpression::ILike { expression, .. } => {
+                self.analyze_value_expression(expression)?;
+            }
             BooleanExpression::Contains { expression, .. } => {
                 self.analyze_value_expression(expression)?;
             }

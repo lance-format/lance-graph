@@ -218,8 +218,13 @@ pub enum BooleanExpression {
         expression: ValueExpression,
         list: Vec<ValueExpression>,
     },
-    /// LIKE pattern matching
+    /// LIKE pattern matching (case-sensitive)
     Like {
+        expression: ValueExpression,
+        pattern: String,
+    },
+    /// ILIKE pattern matching (case-insensitive)
+    ILike {
         expression: ValueExpression,
         pattern: String,
     },

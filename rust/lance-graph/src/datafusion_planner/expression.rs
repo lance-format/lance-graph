@@ -75,6 +75,10 @@ pub(crate) fn to_df_boolean_expr(expr: &BooleanExpression) -> Expr {
             expression,
             pattern,
         } => create_like_expr(expression, pattern, false),
+        BE::ILike {
+            expression,
+            pattern,
+        } => create_like_expr(expression, pattern, true),
         BE::Contains {
             expression,
             substring,
@@ -471,6 +475,85 @@ mod tests {
                 Expr::Literal(..) => {} // Success
                 other => panic!("Expected literal pattern, got {:?}", other),
             }
+        } else {
+            panic!("Expected Like expression");
+        }
+    }
+
+    #[test]
+    fn test_boolean_expr_ilike() {
+        let expr = BooleanExpression::ILike {
+            expression: ValueExpression::Property(PropertyRef {
+                variable: "p".into(),
+                property: "name".into(),
+            }),
+            pattern: "alice%".into(),
+        };
+
+        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr) {
+            assert!(!like_expr.negated, "Should not be negated");
+            assert!(
+                like_expr.case_insensitive,
+                "ILIKE should be case insensitive"
+            );
+            assert_eq!(like_expr.escape_char, None, "Should have no escape char");
+            match *like_expr.expr {
+                Expr::Column(ref col_expr) => {
+                    assert_eq!(col_expr.name(), "p__name");
+                }
+                other => panic!("Expected column expression, got {:?}", other),
+            }
+            // Check pattern is a literal
+            match *like_expr.pattern {
+                Expr::Literal(ref scalar, _) => {
+                    let s = format!("{:?}", scalar);
+                    assert!(
+                        s.contains("alice%"),
+                        "Pattern should be 'alice%', got: {}",
+                        s
+                    );
+                }
+                other => panic!("Expected literal pattern, got {:?}", other),
+            }
+        } else {
+            panic!("Expected Like expression");
+        }
+    }
+
+    #[test]
+    fn test_boolean_expr_like_vs_ilike_case_sensitivity() {
+        // Test LIKE (case-sensitive)
+        let like_expr = BooleanExpression::Like {
+            expression: ValueExpression::Property(PropertyRef {
+                variable: "p".into(),
+                property: "name".into(),
+            }),
+            pattern: "Test%".into(),
+        };
+
+        if let Expr::Like(like) = to_df_boolean_expr(&like_expr) {
+            assert!(
+                !like.case_insensitive,
+                "LIKE should be case-sensitive (case_insensitive = false)"
+            );
+        } else {
+            panic!("Expected Like expression");
+        }
+
+        // Test ILIKE (case-insensitive)
+        let ilike_expr = BooleanExpression::ILike {
+            expression: ValueExpression::Property(PropertyRef {
+                variable: "p".into(),
+                property: "name".into(),
+            }),
+            pattern: "Test%".into(),
+        };
+
+        if let Expr::Like(ilike) = to_df_boolean_expr(&ilike_expr) {
+            assert!(
+                ilike.case_insensitive,
+                "ILIKE should be case-insensitive (case_insensitive = true)"
+            );
         } else {
             panic!("Expected Like expression");
         }
