@@ -236,8 +236,8 @@ fn property_pair(input: &str) -> IResult<&str, (String, PropertyValue)> {
 fn property_value(input: &str) -> IResult<&str, PropertyValue> {
     alt((
         map(string_literal, PropertyValue::String),
+        map(float_literal, PropertyValue::Float), // Try float BEFORE integer (more specific)
         map(integer_literal, PropertyValue::Integer),
-        map(float_literal, PropertyValue::Float),
         map(boolean_literal, PropertyValue::Boolean),
         map(tag("null"), |_| PropertyValue::Null),
         map(parameter, PropertyValue::Parameter),
@@ -435,14 +435,108 @@ fn comparison_operator(input: &str) -> IResult<&str, ComparisonOperator> {
     ))(input)
 }
 
+// Parse a basic value expression (without vector functions to avoid circular dependency)
+fn basic_value_expression(input: &str) -> IResult<&str, ValueExpression> {
+    alt((
+        parse_parameter,                               // Try $parameter
+        function_call,                                 // Regular function calls
+        map(property_value, ValueExpression::Literal), // Try literals BEFORE property references
+        map(property_reference, ValueExpression::Property),
+        map(identifier, |id| ValueExpression::Variable(id.to_string())),
+    ))(input)
+}
+
 // Parse a value expression
 fn value_expression(input: &str) -> IResult<&str, ValueExpression> {
     alt((
-        function_call,
-        map(property_reference, ValueExpression::Property),
-        map(property_value, ValueExpression::Literal),
-        map(identifier, |id| ValueExpression::Variable(id.to_string())),
+        parse_vector_distance,   // Try vector_distance first
+        parse_vector_similarity, // Try vector_similarity
+        basic_value_expression,  // Fall back to basic expressions
     ))(input)
+}
+
+// Parse distance metric: cosine, l2, dot
+fn parse_distance_metric(input: &str) -> IResult<&str, DistanceMetric> {
+    alt((
+        map(tag_no_case("cosine"), |_| DistanceMetric::Cosine),
+        map(tag_no_case("l2"), |_| DistanceMetric::L2),
+        map(tag_no_case("dot"), |_| DistanceMetric::Dot),
+    ))(input)
+}
+
+// Parse vector_distance(expr, expr, metric)
+fn parse_vector_distance(input: &str) -> IResult<&str, ValueExpression> {
+    let (input, _) = tag_no_case("vector_distance")(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = char('(')(input)?;
+    let (input, _) = multispace0(input)?;
+
+    // Parse left expression - use basic_value_expression to avoid circular dependency
+    let (input, left) = basic_value_expression(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = char(',')(input)?;
+    let (input, _) = multispace0(input)?;
+
+    // Parse right expression - use basic_value_expression to avoid circular dependency
+    let (input, right) = basic_value_expression(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = char(',')(input)?;
+    let (input, _) = multispace0(input)?;
+
+    // Parse metric
+    let (input, metric) = parse_distance_metric(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = char(')')(input)?;
+
+    Ok((
+        input,
+        ValueExpression::VectorDistance {
+            left: Box::new(left),
+            right: Box::new(right),
+            metric,
+        },
+    ))
+}
+
+// Parse vector_similarity(expr, expr, metric)
+fn parse_vector_similarity(input: &str) -> IResult<&str, ValueExpression> {
+    let (input, _) = tag_no_case("vector_similarity")(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = char('(')(input)?;
+    let (input, _) = multispace0(input)?;
+
+    // Parse left expression - use basic_value_expression to avoid circular dependency
+    let (input, left) = basic_value_expression(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = char(',')(input)?;
+    let (input, _) = multispace0(input)?;
+
+    // Parse right expression - use basic_value_expression to avoid circular dependency
+    let (input, right) = basic_value_expression(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = char(',')(input)?;
+    let (input, _) = multispace0(input)?;
+
+    // Parse metric
+    let (input, metric) = parse_distance_metric(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, _) = char(')')(input)?;
+
+    Ok((
+        input,
+        ValueExpression::VectorSimilarity {
+            left: Box::new(left),
+            right: Box::new(right),
+            metric,
+        },
+    ))
+}
+
+// Parse parameter reference: $name
+fn parse_parameter(input: &str) -> IResult<&str, ValueExpression> {
+    let (input, _) = char('$')(input)?;
+    let (input, name) = identifier(input)?;
+    Ok((input, ValueExpression::Parameter(name.to_string())))
 }
 
 // Parse a function call: function_name(args)
@@ -1333,6 +1427,164 @@ mod tests {
                 }
             }
             _ => panic!("Expected OR expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_vector_distance() {
+        let query = "MATCH (p:Person) WHERE vector_distance(p.embedding, $query_vec, cosine) < 0.5 RETURN p.name";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), "vector_distance should parse successfully");
+
+        let ast = result.unwrap();
+        let where_clause = ast.where_clause.expect("Expected WHERE clause");
+
+        // Verify it's a comparison with vector_distance
+        match where_clause.expression {
+            BooleanExpression::Comparison { left, operator, .. } => {
+                match left {
+                    ValueExpression::VectorDistance {
+                        left,
+                        right,
+                        metric,
+                    } => {
+                        assert_eq!(metric, DistanceMetric::Cosine);
+                        // Verify left is property reference
+                        assert!(matches!(*left, ValueExpression::Property(_)));
+                        // Verify right is parameter
+                        assert!(matches!(*right, ValueExpression::Parameter(_)));
+                    }
+                    _ => panic!("Expected VectorDistance"),
+                }
+                assert_eq!(operator, ComparisonOperator::LessThan);
+            }
+            _ => panic!("Expected comparison"),
+        }
+    }
+
+    #[test]
+    fn test_parse_vector_similarity() {
+        let query =
+            "MATCH (p:Person) WHERE vector_similarity(p.embedding, $vec, l2) > 0.8 RETURN p";
+        let result = parse_cypher_query(query);
+        assert!(
+            result.is_ok(),
+            "vector_similarity should parse successfully"
+        );
+
+        let ast = result.unwrap();
+        let where_clause = ast.where_clause.expect("Expected WHERE clause");
+
+        match where_clause.expression {
+            BooleanExpression::Comparison { left, operator, .. } => {
+                match left {
+                    ValueExpression::VectorSimilarity { metric, .. } => {
+                        assert_eq!(metric, DistanceMetric::L2);
+                    }
+                    _ => panic!("Expected VectorSimilarity"),
+                }
+                assert_eq!(operator, ComparisonOperator::GreaterThan);
+            }
+            _ => panic!("Expected comparison"),
+        }
+    }
+
+    #[test]
+    fn test_parse_parameter() {
+        let query = "MATCH (p:Person) WHERE p.age = $min_age RETURN p";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), "Parameter should parse successfully");
+
+        let ast = result.unwrap();
+        let where_clause = ast.where_clause.expect("Expected WHERE clause");
+
+        match where_clause.expression {
+            BooleanExpression::Comparison { right, .. } => match right {
+                ValueExpression::Parameter(name) => {
+                    assert_eq!(name, "min_age");
+                }
+                _ => panic!("Expected Parameter"),
+            },
+            _ => panic!("Expected comparison"),
+        }
+    }
+
+    #[test]
+    fn test_vector_distance_metrics() {
+        for metric in &["cosine", "l2", "dot"] {
+            let query = format!(
+                "MATCH (p:Person) RETURN vector_distance(p.emb, $v, {}) AS dist",
+                metric
+            );
+            let result = parse_cypher_query(&query);
+            assert!(result.is_ok(), "Failed to parse metric: {}", metric);
+
+            let ast = result.unwrap();
+            let return_item = &ast.return_clause.items[0];
+
+            match &return_item.expression {
+                ValueExpression::VectorDistance {
+                    metric: parsed_metric,
+                    ..
+                } => {
+                    let expected = match *metric {
+                        "cosine" => DistanceMetric::Cosine,
+                        "l2" => DistanceMetric::L2,
+                        "dot" => DistanceMetric::Dot,
+                        _ => panic!("Unexpected metric"),
+                    };
+                    assert_eq!(*parsed_metric, expected);
+                }
+                _ => panic!("Expected VectorDistance"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_vector_search_in_order_by() {
+        let query = "MATCH (p:Person) RETURN p.name ORDER BY vector_distance(p.embedding, $query_vec, cosine) ASC LIMIT 10";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), "vector_distance in ORDER BY should parse");
+
+        let ast = result.unwrap();
+        let order_by = ast.order_by.expect("Expected ORDER BY clause");
+
+        assert_eq!(order_by.items.len(), 1);
+        match &order_by.items[0].expression {
+            ValueExpression::VectorDistance { .. } => {
+                // Success
+            }
+            _ => panic!("Expected VectorDistance in ORDER BY"),
+        }
+    }
+
+    #[test]
+    fn test_hybrid_query_with_vector_and_property_filters() {
+        let query = "MATCH (p:Person) WHERE p.age > 25 AND vector_similarity(p.embedding, $query_vec, cosine) > 0.7 RETURN p.name";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), "Hybrid query should parse");
+
+        let ast = result.unwrap();
+        let where_clause = ast.where_clause.expect("Expected WHERE clause");
+
+        // Should be an AND expression
+        match where_clause.expression {
+            BooleanExpression::And(left, right) => {
+                // Left should be age > 25
+                match *left {
+                    BooleanExpression::Comparison { .. } => {}
+                    _ => panic!("Expected comparison on left"),
+                }
+                // Right should be vector_similarity > 0.7
+                match *right {
+                    BooleanExpression::Comparison { left, .. } => match left {
+                        ValueExpression::VectorSimilarity { .. } => {}
+                        _ => panic!("Expected VectorSimilarity"),
+                    },
+                    _ => panic!("Expected comparison on right"),
+                }
+            }
+            _ => panic!("Expected AND expression"),
         }
     }
 }

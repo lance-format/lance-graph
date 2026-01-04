@@ -249,6 +249,18 @@ pub enum BooleanExpression {
     IsNotNull(ValueExpression),
 }
 
+/// Distance metric for vector similarity
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub enum DistanceMetric {
+    /// Euclidean distance (L2)
+    L2,
+    /// Cosine similarity (1 - cosine distance)
+    #[default]
+    Cosine,
+    /// Dot product
+    Dot,
+}
+
 /// Comparison operators
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ComparisonOperator {
@@ -280,6 +292,22 @@ pub enum ValueExpression {
         operator: ArithmeticOperator,
         right: Box<ValueExpression>,
     },
+    /// Vector distance function: vector_distance(left, right, metric)
+    /// Returns the distance as a float (lower = more similar for L2/Cosine)
+    VectorDistance {
+        left: Box<ValueExpression>,
+        right: Box<ValueExpression>,
+        metric: DistanceMetric,
+    },
+    /// Vector similarity function: vector_similarity(left, right, metric)
+    /// Returns the similarity score as a float (higher = more similar)
+    VectorSimilarity {
+        left: Box<ValueExpression>,
+        right: Box<ValueExpression>,
+        metric: DistanceMetric,
+    },
+    /// Parameter reference for query parameters (e.g., $query_vector)
+    Parameter(String),
 }
 
 /// Arithmetic operators

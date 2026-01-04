@@ -346,6 +346,41 @@ impl SemanticAnalyzer {
                     }
                 }
             }
+            ValueExpression::VectorDistance { left, right, .. } => {
+                // Validate vector distance function arguments
+                self.analyze_value_expression(left)?;
+                self.analyze_value_expression(right)?;
+
+                // Check that at least one argument references a property
+                let has_property = matches!(**left, ValueExpression::Property(_))
+                    || matches!(**right, ValueExpression::Property(_));
+
+                if !has_property {
+                    return Err(GraphError::PlanError {
+                        message: "vector_distance() requires at least one argument to be a property reference".to_string(),
+                        location: snafu::Location::new(file!(), line!(), column!()),
+                    });
+                }
+            }
+            ValueExpression::VectorSimilarity { left, right, .. } => {
+                // Validate vector similarity function arguments
+                self.analyze_value_expression(left)?;
+                self.analyze_value_expression(right)?;
+
+                // Check that at least one argument references a property
+                let has_property = matches!(**left, ValueExpression::Property(_))
+                    || matches!(**right, ValueExpression::Property(_));
+
+                if !has_property {
+                    return Err(GraphError::PlanError {
+                        message: "vector_similarity() requires at least one argument to be a property reference".to_string(),
+                        location: snafu::Location::new(file!(), line!(), column!()),
+                    });
+                }
+            }
+            ValueExpression::Parameter(_) => {
+                // Parameters are always valid (resolved at runtime)
+            }
         }
         Ok(())
     }
@@ -1142,5 +1177,131 @@ mod tests {
         let result = analyze_return_expr(expr);
         assert!(result.is_ok(), "Expected Ok but got {:?}", result);
         assert!(result.unwrap().errors.is_empty());
+    }
+
+    #[test]
+    fn test_vector_distance_with_property() {
+        use crate::ast::DistanceMetric;
+
+        // MATCH (p:Person) RETURN vector_distance(p.embedding, p.embedding, l2)
+        let expr = ValueExpression::VectorDistance {
+            left: Box::new(ValueExpression::Property(PropertyRef {
+                variable: "p".to_string(),
+                property: "embedding".to_string(),
+            })),
+            right: Box::new(ValueExpression::Property(PropertyRef {
+                variable: "p".to_string(),
+                property: "embedding".to_string(),
+            })),
+            metric: DistanceMetric::L2,
+        };
+
+        let result = analyze_return_with_match("p", "Person", expr);
+        assert!(result.is_ok(), "Expected Ok but got {:?}", result);
+        assert!(result.unwrap().errors.is_empty());
+    }
+
+    #[test]
+    fn test_vector_distance_without_property_fails() {
+        use crate::ast::DistanceMetric;
+
+        // MATCH (p:Person) RETURN vector_distance(0.5, 0.3, l2) - both literals, should fail
+        let expr = ValueExpression::VectorDistance {
+            left: Box::new(ValueExpression::Literal(PropertyValue::Float(0.5))),
+            right: Box::new(ValueExpression::Literal(PropertyValue::Float(0.3))),
+            metric: DistanceMetric::L2,
+        };
+
+        let result = analyze_return_with_match("p", "Person", expr);
+        // Semantic analyzer returns Ok but with errors in the result
+        assert!(
+            result.is_ok(),
+            "Analyzer should return Ok with errors, got {:?}",
+            result
+        );
+        let semantic_result = result.unwrap();
+        assert!(
+            !semantic_result.errors.is_empty(),
+            "Expected validation errors"
+        );
+        assert!(semantic_result
+            .errors
+            .iter()
+            .any(|e| e.contains("requires at least one argument to be a property")));
+    }
+
+    #[test]
+    fn test_vector_similarity_with_property() {
+        use crate::ast::DistanceMetric;
+
+        // MATCH (p:Person) RETURN vector_similarity(p.embedding, p.embedding, cosine)
+        let expr = ValueExpression::VectorSimilarity {
+            left: Box::new(ValueExpression::Property(PropertyRef {
+                variable: "p".to_string(),
+                property: "embedding".to_string(),
+            })),
+            right: Box::new(ValueExpression::Property(PropertyRef {
+                variable: "p".to_string(),
+                property: "embedding".to_string(),
+            })),
+            metric: DistanceMetric::Cosine,
+        };
+
+        let result = analyze_return_with_match("p", "Person", expr);
+        assert!(result.is_ok(), "Expected Ok but got {:?}", result);
+        assert!(result.unwrap().errors.is_empty());
+    }
+
+    #[test]
+    fn test_vector_similarity_one_literal_ok() {
+        use crate::ast::DistanceMetric;
+
+        // MATCH (p:Person) RETURN vector_similarity(p.embedding, 0.5, cosine)
+        // One property reference is sufficient
+        let expr = ValueExpression::VectorSimilarity {
+            left: Box::new(ValueExpression::Property(PropertyRef {
+                variable: "p".to_string(),
+                property: "embedding".to_string(),
+            })),
+            right: Box::new(ValueExpression::Literal(PropertyValue::Float(0.5))),
+            metric: DistanceMetric::Cosine,
+        };
+
+        let result = analyze_return_with_match("p", "Person", expr);
+        assert!(result.is_ok(), "Expected Ok but got {:?}", result);
+        assert!(result.unwrap().errors.is_empty());
+    }
+
+    #[test]
+    fn test_vector_distance_all_metrics() {
+        use crate::ast::DistanceMetric;
+
+        // Test all distance metrics are accepted
+        for metric in [
+            DistanceMetric::L2,
+            DistanceMetric::Cosine,
+            DistanceMetric::Dot,
+        ] {
+            let expr = ValueExpression::VectorDistance {
+                left: Box::new(ValueExpression::Property(PropertyRef {
+                    variable: "p".to_string(),
+                    property: "embedding".to_string(),
+                })),
+                right: Box::new(ValueExpression::Property(PropertyRef {
+                    variable: "p".to_string(),
+                    property: "embedding".to_string(),
+                })),
+                metric: metric.clone(),
+            };
+
+            let result = analyze_return_with_match("p", "Person", expr);
+            assert!(
+                result.is_ok(),
+                "Expected Ok for metric {:?} but got {:?}",
+                metric,
+                result
+            );
+            assert!(result.unwrap().errors.is_empty());
+        }
     }
 }

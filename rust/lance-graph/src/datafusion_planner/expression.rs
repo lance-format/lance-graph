@@ -6,6 +6,7 @@
 //! Converts AST expressions to DataFusion expressions
 
 use crate::ast::{BooleanExpression, PropertyValue, ValueExpression};
+use crate::datafusion_planner::udf;
 use datafusion::logical_expr::{col, lit, BinaryExpr, Expr, Operator};
 use datafusion_functions_aggregate::average::avg;
 use datafusion_functions_aggregate::count::count;
@@ -212,6 +213,48 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
                 right: Box::new(r),
             })
         }
+        VE::VectorDistance {
+            left,
+            right,
+            metric,
+        } => {
+            // Create UDF for vector distance computation
+            let udf = udf::create_vector_distance_udf(metric);
+            let left_expr = to_df_value_expr(left);
+            let right_expr = to_df_value_expr(right);
+            Expr::ScalarFunction(datafusion::logical_expr::expr::ScalarFunction::new_udf(
+                udf,
+                vec![left_expr, right_expr],
+            ))
+        }
+        VE::VectorSimilarity {
+            left,
+            right,
+            metric,
+        } => {
+            // Create UDF for vector similarity computation
+            let udf = udf::create_vector_similarity_udf(metric);
+            let left_expr = to_df_value_expr(left);
+            let right_expr = to_df_value_expr(right);
+            Expr::ScalarFunction(datafusion::logical_expr::expr::ScalarFunction::new_udf(
+                udf,
+                vec![left_expr, right_expr],
+            ))
+        }
+        VE::Parameter(name) => {
+            // TODO: Implement proper parameter resolution
+            // Parameters ($param) should be resolved to literal values from the query's
+            // parameter map (CypherQuery::parameters()) before or during planning.
+            //
+            // Current limitation: This creates a column reference as a placeholder,
+            // which will fail at execution if the column doesn't exist.
+            //
+            // Proper fix requires one of:
+            // 1. Resolve parameters during semantic analysis (substitute before planning)
+            // 2. Pass parameter map to to_df_value_expr and resolve here
+            // 3. Use DataFusion's parameter binding mechanism
+            col(format!("${}", name))
+        }
     }
 }
 
@@ -229,6 +272,12 @@ pub(crate) fn contains_aggregate(expr: &ValueExpression) -> bool {
             is_aggregate || args.iter().any(contains_aggregate)
         }
         VE::Arithmetic { left, right, .. } => contains_aggregate(left) || contains_aggregate(right),
+        VE::VectorDistance { left, right, .. } => {
+            contains_aggregate(left) || contains_aggregate(right)
+        }
+        VE::VectorSimilarity { left, right, .. } => {
+            contains_aggregate(left) || contains_aggregate(right)
+        }
         _ => false,
     }
 }

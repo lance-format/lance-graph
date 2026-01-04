@@ -169,5 +169,8 @@ pub(crate) fn to_df_value_expr_simple(
         VE::Variable(v) => col(v),
         VE::Literal(v) => to_df_literal(v),
         VE::Function { .. } | VE::Arithmetic { .. } => lit(0),
+        VE::VectorDistance { .. } => lit(0.0f32),
+        VE::VectorSimilarity { .. } => lit(1.0f32),
+        VE::Parameter(_) => lit(0),
     }
 }
