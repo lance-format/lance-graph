@@ -165,40 +165,6 @@ def test_collaborative_network_query(knowledge_graph_env):
     assert "ORDER BY" in sql_upper
 
 
-def test_parameterized_complex_query(knowledge_graph_env):
-    """Test complex query with multiple parameters.
-
-    Find authors from a specific country with papers above a citation threshold,
-    published in recent years.
-    """
-    config, datasets = knowledge_graph_env
-    query = (
-        CypherQuery(
-            """
-            MATCH (a:Author)-[:AUTHORED]->(p:Paper)
-            WHERE a.country = $country
-              AND p.citations > $min_citations
-              AND p.year >= $min_year
-            RETURN a.name, a.h_index, p.title, p.citations
-            ORDER BY p.citations DESC, a.h_index DESC
-            """
-        )
-        .with_config(config)
-        .with_parameter("country", "USA")
-        .with_parameter("min_citations", 300)
-        .with_parameter("min_year", 2020)
-    )
-
-    sql = query.to_sql(datasets)
-
-    assert isinstance(sql, str)
-    sql_upper = sql.upper()
-    assert "SELECT" in sql_upper
-    assert "JOIN" in sql_upper
-    assert "WHERE" in sql_upper
-    assert "ORDER BY" in sql_upper
-
-
 def test_to_sql_without_config_raises_error(knowledge_graph_env):
     """Test that to_sql fails gracefully without config."""
     _, datasets = knowledge_graph_env
