@@ -12,7 +12,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_while1},
     character::complete::{char, multispace0, multispace1},
-    combinator::{map, opt, recognize},
+    combinator::{map, opt, peek, recognize},
     multi::{many0, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, tuple},
     IResult,
@@ -447,12 +447,22 @@ fn basic_value_expression(input: &str) -> IResult<&str, ValueExpression> {
 }
 
 // Parse a value expression
+// Optimization: Use peek to avoid expensive backtracking for non-vector queries
 fn value_expression(input: &str) -> IResult<&str, ValueExpression> {
-    alt((
-        parse_vector_distance,   // Try vector_distance first
-        parse_vector_similarity, // Try vector_similarity
-        basic_value_expression,  // Fall back to basic expressions
-    ))(input)
+    // Peek at first identifier to dispatch to correct parser
+    // This eliminates failed parser attempts for every non-vector expression
+    if let Ok((_, first_ident)) = peek(identifier)(input) {
+        let ident_lower = first_ident.to_lowercase();
+
+        match ident_lower.as_str() {
+            "vector_distance" => return parse_vector_distance(input),
+            "vector_similarity" => return parse_vector_similarity(input),
+            _ => {} // Not a vector function, continue to basic expressions
+        }
+    }
+
+    // Fast path for common expressions
+    basic_value_expression(input)
 }
 
 // Parse distance metric: cosine, l2, dot
