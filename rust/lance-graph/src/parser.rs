@@ -438,9 +438,9 @@ fn comparison_operator(input: &str) -> IResult<&str, ComparisonOperator> {
 // Parse a basic value expression (without vector functions to avoid circular dependency)
 fn basic_value_expression(input: &str) -> IResult<&str, ValueExpression> {
     alt((
-        parse_vector_literal,                          // Try vector literal first [0.1, 0.2]
-        parse_parameter,                               // Try $parameter
-        function_call,                                 // Regular function calls
+        parse_vector_literal, // Try vector literal first [0.1, 0.2]
+        parse_parameter,      // Try $parameter
+        function_call,        // Regular function calls
         map(property_value, ValueExpression::Literal), // Try literals BEFORE property references
         map(property_reference, ValueExpression::Property),
         map(identifier, |id| ValueExpression::Variable(id.to_string())),
@@ -619,10 +619,7 @@ fn float32_literal(input: &str) -> IResult<&str, f32> {
                     digit1,
                 ))),
                 // Regular float: 1.23 or integer: 123
-                recognize(tuple((
-                    digit1,
-                    opt(tuple((char('.'), digit0))),
-                ))),
+                recognize(tuple((digit1, opt(tuple((char('.'), digit0)))))),
             )),
         ))),
         |s: &str| s.parse::<f32>(),
@@ -1689,7 +1686,8 @@ mod tests {
 
     #[test]
     fn test_vector_distance_with_literal() {
-        let query = "MATCH (p:Person) WHERE vector_distance(p.embedding, [0.1, 0.2], l2) < 0.5 RETURN p";
+        let query =
+            "MATCH (p:Person) WHERE vector_distance(p.embedding, [0.1, 0.2], l2) < 0.5 RETURN p";
         let result = parse_cypher_query(query);
         assert!(result.is_ok());
 
@@ -1699,7 +1697,11 @@ mod tests {
         match where_clause.expression {
             BooleanExpression::Comparison { left, operator, .. } => {
                 match left {
-                    ValueExpression::VectorDistance { left, right, metric } => {
+                    ValueExpression::VectorDistance {
+                        left,
+                        right,
+                        metric,
+                    } => {
                         // Left should be property reference
                         assert!(matches!(*left, ValueExpression::Property(_)));
                         // Right should be vector literal

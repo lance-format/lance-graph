@@ -243,7 +243,7 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
         }
         VE::VectorLiteral(values) => {
             // Convert Vec<f32> to DataFusion scalar FixedSizeList
-            use arrow::array::{Float32Array, FixedSizeListArray};
+            use arrow::array::{FixedSizeListArray, Float32Array};
             use arrow::datatypes::{DataType, Field};
             use datafusion::scalar::ScalarValue;
             use std::sync::Arc;
