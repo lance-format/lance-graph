@@ -11,8 +11,8 @@ use crate::error::{GraphError, Result};
 use nom::{
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_while1},
-    character::complete::{char, multispace0, multispace1},
-    combinator::{map, opt, peek, recognize},
+    character::complete::{char, digit0, digit1, multispace0, multispace1, one_of},
+    combinator::{map, map_res, opt, peek, recognize},
     multi::{many0, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, tuple},
     IResult,
@@ -438,6 +438,7 @@ fn comparison_operator(input: &str) -> IResult<&str, ComparisonOperator> {
 // Parse a basic value expression (without vector functions to avoid circular dependency)
 fn basic_value_expression(input: &str) -> IResult<&str, ValueExpression> {
     alt((
+        parse_vector_literal,                          // Try vector literal first [0.1, 0.2]
         parse_parameter,                               // Try $parameter
         function_call,                                 // Regular function calls
         map(property_value, ValueExpression::Literal), // Try literals BEFORE property references
@@ -601,6 +602,47 @@ fn value_expression_list(input: &str) -> IResult<&str, Vec<ValueExpression>> {
         ),
         tuple((multispace0, char(']'))),
     )(input)
+}
+
+// Parse a float32 literal for vectors
+fn float32_literal(input: &str) -> IResult<&str, f32> {
+    map_res(
+        recognize(tuple((
+            opt(char('-')),
+            alt((
+                // Scientific notation: 1e-3, 2.5e2
+                recognize(tuple((
+                    digit1,
+                    opt(tuple((char('.'), digit0))),
+                    one_of("eE"),
+                    opt(one_of("+-")),
+                    digit1,
+                ))),
+                // Regular float: 1.23 or integer: 123
+                recognize(tuple((
+                    digit1,
+                    opt(tuple((char('.'), digit0))),
+                ))),
+            )),
+        ))),
+        |s: &str| s.parse::<f32>(),
+    )(input)
+}
+
+// Parse vector literal: [0.1, 0.2, 0.3]
+fn parse_vector_literal(input: &str) -> IResult<&str, ValueExpression> {
+    let (input, _) = char('[')(input)?;
+    let (input, _) = multispace0(input)?;
+
+    let (input, values) = separated_list1(
+        tuple((multispace0, char(','), multispace0)),
+        float32_literal,
+    )(input)?;
+
+    let (input, _) = multispace0(input)?;
+    let (input, _) = char(']')(input)?;
+
+    Ok((input, ValueExpression::VectorLiteral(values)))
 }
 
 // Parse a property reference: variable.property
@@ -1595,6 +1637,87 @@ mod tests {
                 }
             }
             _ => panic!("Expected AND expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_vector_literal() {
+        let result = parse_vector_literal("[0.1, 0.2, 0.3]");
+        assert!(result.is_ok());
+        let (_, expr) = result.unwrap();
+        match expr {
+            ValueExpression::VectorLiteral(vec) => {
+                assert_eq!(vec.len(), 3);
+                assert_eq!(vec[0], 0.1);
+                assert_eq!(vec[1], 0.2);
+                assert_eq!(vec[2], 0.3);
+            }
+            _ => panic!("Expected VectorLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_parse_vector_literal_with_negative_values() {
+        let result = parse_vector_literal("[-0.1, 0.2, -0.3]");
+        assert!(result.is_ok());
+        let (_, expr) = result.unwrap();
+        match expr {
+            ValueExpression::VectorLiteral(vec) => {
+                assert_eq!(vec.len(), 3);
+                assert_eq!(vec[0], -0.1);
+                assert_eq!(vec[2], -0.3);
+            }
+            _ => panic!("Expected VectorLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_parse_vector_literal_scientific_notation() {
+        let result = parse_vector_literal("[1e-3, 2.5e2, -3e-1]");
+        assert!(result.is_ok());
+        let (_, expr) = result.unwrap();
+        match expr {
+            ValueExpression::VectorLiteral(vec) => {
+                assert_eq!(vec.len(), 3);
+                assert!((vec[0] - 0.001).abs() < 1e-6);
+                assert!((vec[1] - 250.0).abs() < 1e-6);
+                assert!((vec[2] - (-0.3)).abs() < 1e-6);
+            }
+            _ => panic!("Expected VectorLiteral"),
+        }
+    }
+
+    #[test]
+    fn test_vector_distance_with_literal() {
+        let query = "MATCH (p:Person) WHERE vector_distance(p.embedding, [0.1, 0.2], l2) < 0.5 RETURN p";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok());
+
+        let ast = result.unwrap();
+        let where_clause = ast.where_clause.expect("Expected WHERE clause");
+
+        match where_clause.expression {
+            BooleanExpression::Comparison { left, operator, .. } => {
+                match left {
+                    ValueExpression::VectorDistance { left, right, metric } => {
+                        // Left should be property reference
+                        assert!(matches!(*left, ValueExpression::Property(_)));
+                        // Right should be vector literal
+                        match *right {
+                            ValueExpression::VectorLiteral(vec) => {
+                                assert_eq!(vec.len(), 2);
+                                assert_eq!(vec[0], 0.1);
+                                assert_eq!(vec[1], 0.2);
+                            }
+                            _ => panic!("Expected VectorLiteral"),
+                        }
+                        assert_eq!(metric, DistanceMetric::L2);
+                    }
+                    _ => panic!("Expected VectorDistance"),
+                }
+                assert_eq!(operator, ComparisonOperator::LessThan);
+            }
+            _ => panic!("Expected comparison"),
         }
     }
 }

@@ -241,6 +241,25 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
                 vec![left_expr, right_expr],
             ))
         }
+        VE::VectorLiteral(values) => {
+            // Convert Vec<f32> to DataFusion scalar FixedSizeList
+            use arrow::array::{Float32Array, FixedSizeListArray};
+            use arrow::datatypes::{DataType, Field};
+            use datafusion::scalar::ScalarValue;
+            use std::sync::Arc;
+
+            let dim = values.len() as i32;
+            let field = Arc::new(Field::new("item", DataType::Float32, true));
+            let float_array = Arc::new(Float32Array::from(values.clone()));
+
+            let list_array = FixedSizeListArray::try_new(field.clone(), dim, float_array, None)
+                .expect("Failed to create FixedSizeListArray for vector literal");
+
+            let scalar = ScalarValue::try_from_array(&list_array, 0)
+                .expect("Failed to create scalar from array");
+
+            lit(scalar)
+        }
         VE::Parameter(name) => {
             // TODO: Implement proper parameter resolution
             // Parameters ($param) should be resolved to literal values from the query's

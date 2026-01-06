@@ -155,6 +155,36 @@ async fn test_vector_distance_l2() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_vector_distance_l2_with_literal() -> Result<()> {
+    let (config, datasets) = create_person_graph_with_embeddings();
+
+    // Same test as above but using vector literal instead of cross product
+    // Find people similar to [1, 0, 0] (Alice's embedding)
+    let query = CypherQuery::new(
+        "MATCH (p:Person) \
+         WHERE vector_distance(p.embedding, [1.0, 0.0, 0.0], l2) < 0.2 \
+         RETURN p.name ORDER BY p.name",
+    )?
+    .with_config(config);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await?;
+
+    // Should return Alice (exact match) and Bob (very similar)
+    assert_eq!(result.num_rows(), 2);
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(names.value(0), "Alice");
+    assert_eq!(names.value(1), "Bob");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_vector_distance_cosine() -> Result<()> {
     let (config, datasets) = create_person_graph_with_embeddings();
 
@@ -262,6 +292,37 @@ async fn test_vector_distance_order_by() -> Result<()> {
 }
 
 #[tokio::test]
+async fn test_vector_distance_order_by_with_literal() -> Result<()> {
+    let (config, datasets) = create_person_graph_with_embeddings();
+
+    // Same as above but using vector literal - order by distance to [1,0,0] (Alice's vector)
+    let query = CypherQuery::new(
+        "MATCH (p:Person) \
+         RETURN p.name \
+         ORDER BY vector_distance(p.embedding, [1.0, 0.0, 0.0], cosine) ASC \
+         LIMIT 3",
+    )?
+    .with_config(config);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await?;
+
+    // Should return Alice (closest), Bob (second), Eve (third)
+    assert_eq!(result.num_rows(), 3);
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(names.value(0), "Alice");
+    assert_eq!(names.value(1), "Bob");
+    assert_eq!(names.value(2), "Eve");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_vector_similarity_order_by() -> Result<()> {
     let (config, datasets) = create_person_graph_with_embeddings();
 
@@ -346,6 +407,36 @@ async fn test_hybrid_query_property_and_vector() -> Result<()> {
     for i in 0..ages.len() {
         assert!(ages.value(i) > 26);
     }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_hybrid_query_with_vector_literal() -> Result<()> {
+    let (config, datasets) = create_person_graph_with_embeddings();
+
+    // Combine property filter with vector literal search
+    let query = CypherQuery::new(
+        "MATCH (p:Person) \
+         WHERE p.age > 25 \
+           AND vector_distance(p.embedding, [1.0, 0.0, 0.0], l2) < 0.3 \
+         RETURN p.name ORDER BY p.name",
+    )?
+    .with_config(config);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await?;
+
+    // Should return only Alice (age 30 > 25, close to [1,0,0])
+    // Bob is age 25, not > 25
+    assert_eq!(result.num_rows(), 1);
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(names.value(0), "Alice");
 
     Ok(())
 }
@@ -618,6 +709,43 @@ async fn test_vector_similarity_self_comparison() -> Result<()> {
         .value(0);
 
     assert!((similarity - 1.0).abs() < 0.001);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_vector_literal_in_return_clause() -> Result<()> {
+    let (config, datasets) = create_person_graph_with_embeddings();
+
+    // Use vector literal in RETURN to compute distances
+    let query = CypherQuery::new(
+        "MATCH (p:Person) \
+         RETURN p.name, vector_distance(p.embedding, [0.5, 0.5, 0.0], l2) AS dist \
+         ORDER BY dist ASC \
+         LIMIT 1",
+    )?
+    .with_config(config);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await?;
+
+    // Should return Eve (closest to [0.5, 0.5, 0.0])
+    assert_eq!(result.num_rows(), 1);
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(names.value(0), "Eve");
+
+    // Distance should be 0 (exact match)
+    let distances = result
+        .column(1)
+        .as_any()
+        .downcast_ref::<Float32Array>()
+        .unwrap();
+    assert!(distances.value(0) < 0.001);
 
     Ok(())
 }

@@ -172,5 +172,6 @@ pub(crate) fn to_df_value_expr_simple(
         VE::VectorDistance { .. } => lit(0.0f32),
         VE::VectorSimilarity { .. } => lit(1.0f32),
         VE::Parameter(_) => lit(0),
+        VE::VectorLiteral(_) => lit(0.0f32),
     }
 }

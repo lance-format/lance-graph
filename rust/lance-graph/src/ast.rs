@@ -308,6 +308,9 @@ pub enum ValueExpression {
     },
     /// Parameter reference for query parameters (e.g., $query_vector)
     Parameter(String),
+    /// Vector literal: [0.1, 0.2, 0.3]
+    /// Represents an inline vector for similarity search
+    VectorLiteral(Vec<f32>),
 }
 
 /// Arithmetic operators

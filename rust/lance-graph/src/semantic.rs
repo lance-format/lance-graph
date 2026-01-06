@@ -378,6 +378,18 @@ impl SemanticAnalyzer {
                     });
                 }
             }
+            ValueExpression::VectorLiteral(values) => {
+                // Validate non-empty
+                if values.is_empty() {
+                    return Err(GraphError::PlanError {
+                        message: "Vector literal cannot be empty".to_string(),
+                        location: snafu::Location::new(file!(), line!(), column!()),
+                    });
+                }
+
+                // Note: Very large vectors (>4096 dimensions) may impact performance
+                // but we don't enforce a hard limit here
+            }
             ValueExpression::Parameter(_) => {
                 // Parameters are always valid (resolved at runtime)
             }
