@@ -4115,3 +4115,137 @@ async fn test_datafusion_contains_in_relationship_query() {
         ]
     );
 }
+
+// ============================================================================
+// String Function Tests (toLower, toUpper)
+// ============================================================================
+
+#[tokio::test]
+async fn test_tolower_with_contains() {
+    // This test verifies the fix for: toLower(p.name) CONTAINS 'ali'
+    // Previously this caused: "type_coercion: There isn't a common type to coerce Int32 and Utf8"
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    // Search for names containing 'ali' (case-insensitive via toLower)
+    let query = CypherQuery::new(
+        "MATCH (p:Person) WHERE toLower(p.name) CONTAINS 'ali' RETURN p.name, p.age",
+    )
+    .unwrap()
+    .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should find 'Alice' (toLower -> 'alice' contains 'ali')
+    assert_eq!(result.num_rows(), 1, "Expected 1 result for 'ali' search");
+
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(names.value(0), "Alice");
+}
+
+#[tokio::test]
+async fn test_toupper_with_contains() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    // Search for names containing 'BOB' (case-insensitive via toUpper)
+    let query = CypherQuery::new(
+        "MATCH (p:Person) WHERE toUpper(p.name) CONTAINS 'BOB' RETURN p.name",
+    )
+    .unwrap()
+    .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should find 'Bob'
+    assert_eq!(result.num_rows(), 1);
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(names.value(0), "Bob");
+}
+
+#[tokio::test]
+async fn test_tolower_in_return_clause() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    // Return lowercased names
+    let query = CypherQuery::new("MATCH (p:Person) WHERE p.name = 'Alice' RETURN toLower(p.name)")
+        .unwrap()
+        .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    assert_eq!(result.num_rows(), 1);
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    assert_eq!(names.value(0), "alice");
+}
+
+#[tokio::test]
+async fn test_tolower_with_integer_column_in_return() {
+    // This is the exact bug scenario: toLower(s.name) CONTAINS 'x' RETURN s.name, s.age
+    // The bug was that returning an integer column (age) alongside the toLower filter
+    // caused type coercion errors because unsupported functions returned lit(0)
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    let query = CypherQuery::new(
+        "MATCH (p:Person) WHERE toLower(p.name) CONTAINS 'cha' RETURN p.name, p.age",
+    )
+    .unwrap()
+    .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should find 'Charlie' (toLower -> 'charlie' contains 'cha')
+    assert_eq!(result.num_rows(), 1);
+
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    let ages = result
+        .column(1)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+
+    assert_eq!(names.value(0), "Charlie");
+    assert_eq!(ages.value(0), 30);
+}

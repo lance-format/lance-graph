@@ -8,6 +8,8 @@
 use crate::ast::{BooleanExpression, PropertyValue, ValueExpression};
 use crate::datafusion_planner::udf;
 use datafusion::logical_expr::{col, lit, BinaryExpr, Expr, Operator};
+use datafusion::functions::string::lower;
+use datafusion::functions::string::upper;
 use datafusion_functions_aggregate::average::avg;
 use datafusion_functions_aggregate::count::count;
 use datafusion_functions_aggregate::min_max::max;
@@ -186,9 +188,29 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
                         lit(0)
                     }
                 }
+                // String functions
+                "tolower" | "lower" => {
+                    if args.len() == 1 {
+                        let arg_expr = to_df_value_expr(&args[0]);
+                        lower().call(vec![arg_expr])
+                    } else {
+                        // Invalid argument count - return NULL
+                        Expr::Literal(datafusion::scalar::ScalarValue::Null, None)
+                    }
+                }
+                "toupper" | "upper" => {
+                    if args.len() == 1 {
+                        let arg_expr = to_df_value_expr(&args[0]);
+                        upper().call(vec![arg_expr])
+                    } else {
+                        // Invalid argument count - return NULL
+                        Expr::Literal(datafusion::scalar::ScalarValue::Null, None)
+                    }
+                }
                 _ => {
-                    // Unsupported function - return placeholder for now
-                    lit(0)
+                    // Unsupported function - return NULL which coerces to any type
+                    // This prevents type coercion errors in both string and numeric contexts
+                    Expr::Literal(datafusion::scalar::ScalarValue::Null, None)
                 }
             }
         }
@@ -1254,5 +1276,129 @@ mod tests {
 
         let name = to_cypher_column_name(&expr);
         assert_eq!(name, "expr", "Arithmetic should use generic name");
+    }
+
+    // ========================================================================
+    // Unit tests for string functions (toLower, toUpper)
+    // ========================================================================
+
+    #[test]
+    fn test_value_expr_function_tolower() {
+        let expr = ValueExpression::Function {
+            name: "toLower".into(),
+            args: vec![ValueExpression::Property(PropertyRef {
+                variable: "p".into(),
+                property: "name".into(),
+            })],
+        };
+
+        let df_expr = to_df_value_expr(&expr);
+        let s = format!("{:?}", df_expr);
+        // Should be a ScalarFunction with lower
+        assert!(
+            s.contains("lower") || s.contains("Lower"),
+            "Should use lower function, got: {}",
+            s
+        );
+        assert!(s.contains("p__name"), "Should contain column reference");
+    }
+
+    #[test]
+    fn test_value_expr_function_toupper() {
+        let expr = ValueExpression::Function {
+            name: "toUpper".into(),
+            args: vec![ValueExpression::Property(PropertyRef {
+                variable: "p".into(),
+                property: "name".into(),
+            })],
+        };
+
+        let df_expr = to_df_value_expr(&expr);
+        let s = format!("{:?}", df_expr);
+        // Should be a ScalarFunction with upper
+        assert!(
+            s.contains("upper") || s.contains("Upper"),
+            "Should use upper function, got: {}",
+            s
+        );
+        assert!(s.contains("p__name"), "Should contain column reference");
+    }
+
+    #[test]
+    fn test_value_expr_function_lower_alias() {
+        // Test that 'lower' also works (SQL-style alias)
+        let expr = ValueExpression::Function {
+            name: "lower".into(),
+            args: vec![ValueExpression::Property(PropertyRef {
+                variable: "p".into(),
+                property: "name".into(),
+            })],
+        };
+
+        let df_expr = to_df_value_expr(&expr);
+        let s = format!("{:?}", df_expr);
+        assert!(
+            s.contains("lower") || s.contains("Lower"),
+            "Should use lower function, got: {}",
+            s
+        );
+    }
+
+    #[test]
+    fn test_value_expr_function_upper_alias() {
+        // Test that 'upper' also works (SQL-style alias)
+        let expr = ValueExpression::Function {
+            name: "upper".into(),
+            args: vec![ValueExpression::Property(PropertyRef {
+                variable: "p".into(),
+                property: "name".into(),
+            })],
+        };
+
+        let df_expr = to_df_value_expr(&expr);
+        let s = format!("{:?}", df_expr);
+        assert!(
+            s.contains("upper") || s.contains("Upper"),
+            "Should use upper function, got: {}",
+            s
+        );
+    }
+
+    #[test]
+    fn test_tolower_with_contains_produces_valid_like() {
+        // This is the bug scenario: toLower(s.name) CONTAINS 'offer'
+        // Previously returned lit(0) which caused type coercion error
+        let tolower_expr = ValueExpression::Function {
+            name: "toLower".into(),
+            args: vec![ValueExpression::Property(PropertyRef {
+                variable: "s".into(),
+                property: "name".into(),
+            })],
+        };
+
+        let contains_expr = BooleanExpression::Contains {
+            expression: tolower_expr,
+            substring: "offer".into(),
+        };
+
+        let df_expr = to_df_boolean_expr(&contains_expr);
+        let s = format!("{:?}", df_expr);
+
+        // Should be a Like expression with lower() on the column, not lit(0)
+        assert!(
+            s.contains("Like"),
+            "Should be a LIKE expression, got: {}",
+            s
+        );
+        assert!(
+            s.contains("lower") || s.contains("Lower"),
+            "Should contain lower function, got: {}",
+            s
+        );
+        assert!(
+            !s.contains("Int32(0)") && !s.contains("Int64(0)") && !s.contains("Utf8(\"\")"),
+            "Should NOT contain literal 0 or empty string (placeholder bugs), got: {}",
+            s
+        );
     }
 }
