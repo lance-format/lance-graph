@@ -71,7 +71,15 @@ _bindings = _load_bindings()
 GraphConfig = _bindings.graph.GraphConfig
 GraphConfigBuilder = _bindings.graph.GraphConfigBuilder
 CypherQuery = _bindings.graph.CypherQuery
+VectorSearch = _bindings.graph.VectorSearch
+DistanceMetric = _bindings.graph.DistanceMetric
 
-__all__ = ["GraphConfig", "GraphConfigBuilder", "CypherQuery"]
+__all__ = [
+    "GraphConfig",
+    "GraphConfigBuilder",
+    "CypherQuery",
+    "VectorSearch",
+    "DistanceMetric",
+]
 
 __version__ = _bindings.__version__

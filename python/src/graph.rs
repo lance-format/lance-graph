@@ -24,6 +24,7 @@ use arrow_schema::Schema;
 use lance_graph::{
     ExecutionStrategy as RustExecutionStrategy, CypherQuery as RustCypherQuery,
     GraphConfig as RustGraphConfig, GraphError as RustGraphError,
+    VectorSearch as RustVectorSearch, ast::DistanceMetric as RustDistanceMetric,
 };
 use pyo3::{
     exceptions::{PyNotImplementedError, PyRuntimeError, PyValueError},
@@ -54,6 +55,193 @@ impl From<ExecutionStrategy> for RustExecutionStrategy {
             ExecutionStrategy::Simple => RustExecutionStrategy::Simple,
             ExecutionStrategy::LanceNative => RustExecutionStrategy::LanceNative,
         }
+    }
+}
+
+/// Distance metric for vector similarity search
+#[pyclass(name = "DistanceMetric", module = "lance.graph")]
+#[derive(Clone, Copy)]
+pub enum DistanceMetric {
+    /// L2 (Euclidean) distance - smaller is more similar
+    L2,
+    /// Cosine distance - smaller is more similar (1 - cosine_similarity)
+    Cosine,
+    /// Dot product distance - for normalized vectors, larger is more similar
+    Dot,
+}
+
+impl From<DistanceMetric> for RustDistanceMetric {
+    fn from(metric: DistanceMetric) -> Self {
+        match metric {
+            DistanceMetric::L2 => RustDistanceMetric::L2,
+            DistanceMetric::Cosine => RustDistanceMetric::Cosine,
+            DistanceMetric::Dot => RustDistanceMetric::Dot,
+        }
+    }
+}
+
+/// Vector similarity search builder
+///
+/// This class provides an explicit API for vector similarity search that can work with:
+/// - In-memory PyArrow tables (brute-force search)
+/// - Lance datasets (ANN search with indices)
+///
+/// This is distinct from the UDF-based vector search (`vector_distance()`, `vector_similarity()`)
+/// which is integrated into Cypher queries.
+///
+/// Examples
+/// --------
+/// >>> from lance_graph import VectorSearch, DistanceMetric
+/// >>>
+/// >>> # Basic vector search on a PyArrow table
+/// >>> results = VectorSearch("embedding") \
+/// ...     .query_vector([0.1, 0.2, 0.3]) \
+/// ...     .metric(DistanceMetric.Cosine) \
+/// ...     .top_k(10) \
+/// ...     .search(table)
+#[pyclass(name = "VectorSearch", module = "lance.graph")]
+#[derive(Clone)]
+pub struct VectorSearch {
+    inner: RustVectorSearch,
+}
+
+#[pymethods]
+impl VectorSearch {
+    /// Create a new VectorSearch builder
+    ///
+    /// Parameters
+    /// ----------
+    /// column : str
+    ///     Name of the vector column to search
+    ///
+    /// Returns
+    /// -------
+    /// VectorSearch
+    ///     A new VectorSearch builder
+    #[new]
+    fn new(column: &str) -> Self {
+        Self {
+            inner: RustVectorSearch::new(column),
+        }
+    }
+
+    /// Set the query vector
+    ///
+    /// Parameters
+    /// ----------
+    /// vector : list[float]
+    ///     The query vector for similarity computation
+    ///
+    /// Returns
+    /// -------
+    /// VectorSearch
+    ///     A new builder with the query vector set
+    fn query_vector(&self, vector: Vec<f32>) -> Self {
+        Self {
+            inner: self.inner.clone().query_vector(vector),
+        }
+    }
+
+    /// Set the distance metric
+    ///
+    /// Parameters
+    /// ----------
+    /// metric : DistanceMetric
+    ///     The distance metric to use (L2, Cosine, or Dot)
+    ///
+    /// Returns
+    /// -------
+    /// VectorSearch
+    ///     A new builder with the metric set
+    fn metric(&self, metric: DistanceMetric) -> Self {
+        Self {
+            inner: self.inner.clone().metric(metric.into()),
+        }
+    }
+
+    /// Set the number of results to return
+    ///
+    /// Parameters
+    /// ----------
+    /// k : int
+    ///     Number of top results to return
+    ///
+    /// Returns
+    /// -------
+    /// VectorSearch
+    ///     A new builder with top_k set
+    fn top_k(&self, k: usize) -> Self {
+        Self {
+            inner: self.inner.clone().top_k(k),
+        }
+    }
+
+    /// Whether to include the distance column in results
+    ///
+    /// Parameters
+    /// ----------
+    /// include : bool
+    ///     If True, adds a distance column to results (default: True)
+    ///
+    /// Returns
+    /// -------
+    /// VectorSearch
+    ///     A new builder with the setting applied
+    fn include_distance(&self, include: bool) -> Self {
+        Self {
+            inner: self.inner.clone().include_distance(include),
+        }
+    }
+
+    /// Set the name of the distance column
+    ///
+    /// Parameters
+    /// ----------
+    /// name : str
+    ///     Name for the distance column (default: "_distance")
+    ///
+    /// Returns
+    /// -------
+    /// VectorSearch
+    ///     A new builder with the column name set
+    fn distance_column_name(&self, name: &str) -> Self {
+        Self {
+            inner: self.inner.clone().distance_column_name(name),
+        }
+    }
+
+    /// Execute brute-force vector search on a PyArrow table
+    ///
+    /// Parameters
+    /// ----------
+    /// table : pyarrow.Table
+    ///     The table containing vectors to search
+    ///
+    /// Returns
+    /// -------
+    /// pyarrow.Table
+    ///     Results sorted by similarity with top_k rows
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If query vector is not set or column not found
+    /// RuntimeError
+    ///     If search execution fails
+    fn search(&self, py: Python, table: &Bound<'_, PyAny>) -> PyResult<PyObject> {
+        let batch = python_any_to_record_batch(table)?;
+        let batch = normalize_record_batch(batch)?;
+
+        let inner = self.inner.clone();
+        let result = RT
+            .block_on(Some(py), inner.search(&batch))?
+            .map_err(graph_error_to_pyerr)?;
+
+        record_batch_to_python_table(py, &result)
+    }
+
+    fn __repr__(&self) -> String {
+        "VectorSearch(...)".to_string()
     }
 }
 
@@ -398,6 +586,67 @@ impl CypherQuery {
         self.inner.ast().get_relationship_types()
     }
 
+    /// Execute Cypher query, then apply vector search reranking on results
+    ///
+    /// This is a convenience method for the common GraphRAG pattern:
+    /// 1. Run Cypher query to get candidate entities via graph traversal
+    /// 2. Rerank candidates by vector similarity
+    ///
+    /// Parameters
+    /// ----------
+    /// datasets : dict
+    ///     Dictionary mapping table names to Lance datasets or PyArrow tables
+    /// vector_search : VectorSearch
+    ///     VectorSearch configuration for reranking
+    ///
+    /// Returns
+    /// -------
+    /// pyarrow.Table
+    ///     Results sorted by vector similarity with top_k rows
+    ///
+    /// Raises
+    /// ------
+    /// ValueError
+    ///     If the query is invalid or vector search is misconfigured
+    /// RuntimeError
+    ///     If query execution fails
+    ///
+    /// Examples
+    /// --------
+    /// >>> from lance_graph import CypherQuery, VectorSearch, DistanceMetric, GraphConfig
+    /// >>>
+    /// >>> config = GraphConfig.builder().with_node_label("Document", "id").build()
+    /// >>> query = CypherQuery("MATCH (d:Document) WHERE d.category = 'tech' RETURN d.id, d.name, d.embedding")
+    /// >>> query = query.with_config(config)
+    /// >>>
+    /// >>> results = query.execute_with_vector_rerank(
+    /// ...     datasets,
+    /// ...     VectorSearch("d.embedding")
+    /// ...         .query_vector([0.1, 0.2, 0.3])
+    /// ...         .metric(DistanceMetric.Cosine)
+    /// ...         .top_k(10)
+    /// ... )
+    fn execute_with_vector_rerank(
+        &self,
+        py: Python,
+        datasets: &Bound<'_, PyDict>,
+        vector_search: &VectorSearch,
+    ) -> PyResult<PyObject> {
+        // Convert datasets to Arrow batches
+        let arrow_datasets = python_datasets_to_batches(datasets)?;
+
+        // Clone for async move
+        let inner_query = self.inner.clone();
+        let vs = vector_search.inner.clone();
+
+        // Execute via runtime
+        let result = RT
+            .block_on(Some(py), inner_query.execute_with_vector_rerank(arrow_datasets, vs))?
+            .map_err(graph_error_to_pyerr)?;
+
+        record_batch_to_python_table(py, &result)
+    }
+
     fn __repr__(&self) -> String {
         format!("CypherQuery(\"{}\")", self.inner.query_text())
     }
@@ -586,9 +835,11 @@ pub fn register_graph_module(py: Python, parent_module: &Bound<'_, PyModule>) ->
     let graph_module = PyModule::new(py, "graph")?;
 
     graph_module.add_class::<ExecutionStrategy>()?;
+    graph_module.add_class::<DistanceMetric>()?;
     graph_module.add_class::<GraphConfig>()?;
     graph_module.add_class::<GraphConfigBuilder>()?;
     graph_module.add_class::<CypherQuery>()?;
+    graph_module.add_class::<VectorSearch>()?;
 
     parent_module.add_submodule(&graph_module)?;
     Ok(())
