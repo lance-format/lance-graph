@@ -10,7 +10,7 @@ This tests the explicit two-step vector search workflow:
 
 import pyarrow as pa
 import pytest
-from lance_graph import CypherQuery, GraphConfig, VectorSearch, DistanceMetric
+from lance_graph import CypherQuery, DistanceMetric, GraphConfig, VectorSearch
 
 
 @pytest.fixture
@@ -187,7 +187,8 @@ def test_execute_with_vector_rerank_filtered(vector_env):
 
     # Filter by category first, then rerank
     query = CypherQuery(
-        "MATCH (d:Document) WHERE d.category = 'science' RETURN d.id, d.name, d.embedding"
+        "MATCH (d:Document) WHERE d.category = 'science' "
+        "RETURN d.id, d.name, d.embedding"
     ).with_config(config)
 
     results = query.execute_with_vector_rerank(
