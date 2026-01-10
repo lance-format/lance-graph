@@ -21,7 +21,7 @@ mod expression;
 mod join_ops;
 mod scan_ops;
 mod udf;
-mod vector_ops;
+pub mod vector_ops;
 
 #[cfg(test)]
 mod test_fixtures;

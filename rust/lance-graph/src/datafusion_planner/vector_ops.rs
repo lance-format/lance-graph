@@ -7,36 +7,72 @@
 
 use crate::ast::DistanceMetric;
 use crate::error::{GraphError, Result};
-use arrow::array::{Array, ArrayRef, FixedSizeListArray, Float32Array};
+use arrow::array::{Array, ArrayRef, FixedSizeListArray, Float32Array, ListArray};
 
-/// Extract vectors from Arrow FixedSizeListArray
+/// Extract vectors from Arrow ListArray or FixedSizeListArray
+///
+/// Accepts both types for user convenience:
+/// - FixedSizeListArray: from Lance datasets or explicit construction
+/// - ListArray: from natural table construction with nested lists
 pub fn extract_vectors(array: &ArrayRef) -> Result<Vec<Vec<f32>>> {
-    let list_array = array
-        .as_any()
-        .downcast_ref::<FixedSizeListArray>()
-        .ok_or_else(|| GraphError::ExecutionError {
-            message: "Expected FixedSizeListArray for vector column".to_string(),
-            location: snafu::Location::new(file!(), line!(), column!()),
-        })?;
+    // Try FixedSizeListArray first (more common in Lance)
+    if let Some(list_array) = array.as_any().downcast_ref::<FixedSizeListArray>() {
+        let mut vectors = Vec::with_capacity(list_array.len());
+        for i in 0..list_array.len() {
+            if list_array.is_null(i) {
+                return Err(GraphError::ExecutionError {
+                    message: "Null vector in FixedSizeListArray".to_string(),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                });
+            }
+            let value_array = list_array.value(i);
+            let float_array = value_array
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .ok_or_else(|| GraphError::ExecutionError {
+                    message: "Expected Float32Array in vector".to_string(),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
 
-    let mut vectors = Vec::with_capacity(list_array.len());
-    for i in 0..list_array.len() {
-        let value_array = list_array.value(i);
-        let float_array = value_array
-            .as_any()
-            .downcast_ref::<Float32Array>()
-            .ok_or_else(|| GraphError::ExecutionError {
-                message: "Expected Float32Array in vector".to_string(),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
-
-        let vec: Vec<f32> = (0..float_array.len())
-            .map(|j| float_array.value(j))
-            .collect();
-        vectors.push(vec);
+            let vec: Vec<f32> = (0..float_array.len())
+                .map(|j| float_array.value(j))
+                .collect();
+            vectors.push(vec);
+        }
+        return Ok(vectors);
     }
 
-    Ok(vectors)
+    // Try ListArray (from nested list construction)
+    if let Some(list_array) = array.as_any().downcast_ref::<ListArray>() {
+        let mut vectors = Vec::with_capacity(list_array.len());
+        for i in 0..list_array.len() {
+            if list_array.is_null(i) {
+                return Err(GraphError::ExecutionError {
+                    message: "Null vector in ListArray".to_string(),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                });
+            }
+            let value_array = list_array.value(i);
+            let float_array = value_array
+                .as_any()
+                .downcast_ref::<Float32Array>()
+                .ok_or_else(|| GraphError::ExecutionError {
+                    message: "Expected Float32Array in vector".to_string(),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
+
+            let vec: Vec<f32> = (0..float_array.len())
+                .map(|j| float_array.value(j))
+                .collect();
+            vectors.push(vec);
+        }
+        return Ok(vectors);
+    }
+
+    Err(GraphError::ExecutionError {
+        message: "Expected ListArray or FixedSizeListArray for vector column".to_string(),
+        location: snafu::Location::new(file!(), line!(), column!()),
+    })
 }
 
 /// Extract a single vector from a ScalarValue
@@ -136,8 +172,8 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 /// For similarity search, we return the negative (so lower is better for sorting)
 pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() {
-        // Dimension mismatch - return max distance
-        return f32::MIN;
+        // Dimension mismatch - return worst distance to exclude from results
+        return f32::MAX;
     }
 
     -a.iter().zip(b.iter()).map(|(x, y)| x * y).sum::<f32>()
@@ -146,7 +182,7 @@ pub fn dot_product_distance(a: &[f32], b: &[f32]) -> f32 {
 /// Compute dot product similarity (for vector_similarity function)
 pub fn dot_product_similarity(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() {
-        // Dimension mismatch
+        // Dimension mismatch - return worst similarity to exclude from results
         return f32::MIN;
     }
 
@@ -256,6 +292,12 @@ mod tests {
 
         let dist = cosine_distance(&a, &b);
         assert_eq!(dist, 2.0);
+
+        let dist = dot_product_distance(&a, &b);
+        assert_eq!(dist, f32::MAX);
+
+        let sim = dot_product_similarity(&a, &b);
+        assert_eq!(sim, f32::MIN);
     }
 
     #[test]
@@ -339,5 +381,105 @@ mod tests {
         assert_eq!(similarities[0], 1.0); // Same as query
         assert_eq!(similarities[1], 0.0); // Orthogonal
         assert!((similarities[2] - 0.707).abs() < 0.01); // cos(45°) ≈ 0.707
+    }
+
+    #[test]
+    fn test_extract_vectors_from_fixed_size_list() {
+        use arrow::datatypes::{DataType, Field};
+
+        // Create FixedSizeListArray with 3D vectors
+        let field = Arc::new(Field::new("item", DataType::Float32, true));
+        let values = Arc::new(Float32Array::from(vec![
+            1.0, 0.0, 0.0, // Vector 1
+            0.0, 1.0, 0.0, // Vector 2
+            0.0, 0.0, 1.0, // Vector 3
+        ]));
+        let list_array = FixedSizeListArray::try_new(field, 3, values, None).unwrap();
+        let array_ref: ArrayRef = Arc::new(list_array);
+
+        let result = extract_vectors(&array_ref);
+        assert!(result.is_ok());
+
+        let vectors = result.unwrap();
+        assert_eq!(vectors.len(), 3);
+        assert_eq!(vectors[0], vec![1.0, 0.0, 0.0]);
+        assert_eq!(vectors[1], vec![0.0, 1.0, 0.0]);
+        assert_eq!(vectors[2], vec![0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn test_extract_vectors_from_list_array() {
+        use arrow::array::ListBuilder;
+
+        // Create ListArray with variable-length vectors (though we use same length)
+        let values_builder = Float32Array::builder(9);
+        let mut list_builder = ListBuilder::new(values_builder);
+
+        // Add first vector [1.0, 0.0, 0.0]
+        list_builder.values().append_value(1.0);
+        list_builder.values().append_value(0.0);
+        list_builder.values().append_value(0.0);
+        list_builder.append(true);
+
+        // Add second vector [0.0, 1.0, 0.0]
+        list_builder.values().append_value(0.0);
+        list_builder.values().append_value(1.0);
+        list_builder.values().append_value(0.0);
+        list_builder.append(true);
+
+        // Add third vector [0.5, 0.5, 0.0]
+        list_builder.values().append_value(0.5);
+        list_builder.values().append_value(0.5);
+        list_builder.values().append_value(0.0);
+        list_builder.append(true);
+
+        let list_array = list_builder.finish();
+        let array_ref: ArrayRef = Arc::new(list_array);
+
+        let result = extract_vectors(&array_ref);
+        assert!(result.is_ok());
+
+        let vectors = result.unwrap();
+        assert_eq!(vectors.len(), 3);
+        assert_eq!(vectors[0], vec![1.0, 0.0, 0.0]);
+        assert_eq!(vectors[1], vec![0.0, 1.0, 0.0]);
+        assert_eq!(vectors[2], vec![0.5, 0.5, 0.0]);
+    }
+
+    #[test]
+    fn test_extract_vectors_rejects_invalid_type() {
+        // Test that extract_vectors rejects non-list arrays
+        let float_array = Float32Array::from(vec![1.0, 2.0, 3.0]);
+        let array_ref: ArrayRef = Arc::new(float_array);
+
+        let result = extract_vectors(&array_ref);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Expected ListArray or FixedSizeListArray"));
+    }
+
+    #[test]
+    fn test_extract_vectors_rejects_null_in_fixed_size_list() {
+        use arrow::datatypes::{DataType, Field};
+
+        // Create FixedSizeListArray with a null vector
+        let field = Arc::new(Field::new("item", DataType::Float32, true));
+        let values = Arc::new(Float32Array::from(vec![
+            1.0, 0.0, 0.0, // Vector 1
+            0.0, 1.0, 0.0, // Vector 2 (will be null)
+            0.0, 0.0, 1.0, // Vector 3
+        ]));
+        let null_buffer = arrow::buffer::NullBuffer::from(vec![true, false, true]);
+        let list_array = FixedSizeListArray::try_new(field, 3, values, Some(null_buffer)).unwrap();
+        let array_ref: ArrayRef = Arc::new(list_array);
+
+        let result = extract_vectors(&array_ref);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Null vector in FixedSizeListArray"));
     }
 }

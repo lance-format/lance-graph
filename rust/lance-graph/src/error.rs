@@ -49,7 +49,7 @@ pub enum GraphError {
     /// Lance core error
     #[snafu(display("Lance core error: {source}"))]
     LanceCore {
-        source: lance_core::Error,
+        source: lance::Error,
         location: Location,
     },
 
@@ -70,8 +70,8 @@ impl From<datafusion_common::DataFusionError> for GraphError {
     }
 }
 
-impl From<lance_core::Error> for GraphError {
-    fn from(source: lance_core::Error) -> Self {
+impl From<lance::Error> for GraphError {
+    fn from(source: lance::Error) -> Self {
         Self::LanceCore {
             source,
             location: Location::new(file!(), line!(), column!()),

@@ -27,7 +27,9 @@ datafusion-common = "50.3"
 datafusion-expr = "50.3"
 datafusion-sql = "50.3"
 datafusion-functions-aggregate = "50.3"
-lance-core = "1.0.0"
+futures = "0.3"
+lance = "1.0.0"
+lance-linalg = "1.0.0"
 nom = "7.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -36,7 +38,8 @@ snafu = "0.8"
 [dev-dependencies]
 criterion = { version = "0.5", features = ["async", "async_tokio", "html_reports"] }
 futures = "0.3"
-lance = "1.0.0"
+lance-arrow = "1.0.0"
+lance-index = "1.0.0"
 tempfile = "3"
 tokio = { version = "1.37", features = ["macros", "rt-multi-thread"] }
 

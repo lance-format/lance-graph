@@ -952,6 +952,48 @@ impl CypherQuery {
 }
 
 impl CypherQuery {
+    /// Execute Cypher query, then apply vector search reranking on results
+    ///
+    /// This is a convenience method for the common GraphRAG pattern:
+    /// 1. Run Cypher query to get candidate entities via graph traversal
+    /// 2. Rerank candidates by vector similarity
+    ///
+    /// # Arguments
+    /// * `datasets` - HashMap of table name to RecordBatch (nodes and relationships)
+    /// * `vector_search` - VectorSearch configuration for reranking
+    ///
+    /// # Returns
+    /// A RecordBatch with the top-k results sorted by vector similarity
+    ///
+    /// # Example
+    /// ```ignore
+    /// use lance_graph::{CypherQuery, VectorSearch};
+    /// use lance_graph::ast::DistanceMetric;
+    ///
+    /// let results = query
+    ///     .execute_with_vector_rerank(
+    ///         datasets,
+    ///         VectorSearch::new("embedding")
+    ///             .query_vector(query_vec)
+    ///             .metric(DistanceMetric::Cosine)
+    ///             .top_k(10)
+    ///     )
+    ///     .await?;
+    /// ```
+    pub async fn execute_with_vector_rerank(
+        &self,
+        datasets: HashMap<String, arrow::record_batch::RecordBatch>,
+        vector_search: crate::lance_vector_search::VectorSearch,
+    ) -> Result<arrow::record_batch::RecordBatch> {
+        // Step 1: Execute Cypher query to get candidates
+        let candidates = self.execute(datasets, None).await?;
+
+        // Step 2: Apply vector search reranking
+        vector_search.search(&candidates).await
+    }
+}
+
+impl CypherQuery {
     // Generic path executor (N-hop) entrypoint.
     async fn try_execute_path_generic(
         &self,

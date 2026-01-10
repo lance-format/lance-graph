@@ -40,6 +40,7 @@ pub mod config;
 pub mod datafusion_planner;
 pub mod error;
 pub mod lance_native_planner;
+pub mod lance_vector_search;
 pub mod logical_plan;
 pub mod parser;
 pub mod query;
@@ -53,4 +54,5 @@ pub const MAX_VARIABLE_LENGTH_HOPS: u32 = 20;
 
 pub use config::{GraphConfig, NodeMapping, RelationshipMapping};
 pub use error::{GraphError, Result};
+pub use lance_vector_search::VectorSearch;
 pub use query::{CypherQuery, ExecutionStrategy};
