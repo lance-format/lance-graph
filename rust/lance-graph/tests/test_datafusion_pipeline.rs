@@ -4116,10 +4116,6 @@ async fn test_datafusion_contains_in_relationship_query() {
     );
 }
 
-// ============================================================================
-// String Function Tests (toLower, toUpper)
-// ============================================================================
-
 #[tokio::test]
 async fn test_tolower_with_contains() {
     // This test verifies the fix for: toLower(p.name) CONTAINS 'ali'

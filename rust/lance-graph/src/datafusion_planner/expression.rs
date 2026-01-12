@@ -1278,10 +1278,6 @@ mod tests {
         assert_eq!(name, "expr", "Arithmetic should use generic name");
     }
 
-    // ========================================================================
-    // Unit tests for string functions (toLower, toUpper)
-    // ========================================================================
-
     #[test]
     fn test_value_expr_function_tolower() {
         let expr = ValueExpression::Function {
