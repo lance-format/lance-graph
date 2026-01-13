@@ -38,7 +38,8 @@ pub(super) fn apply_return_with_qualifier(
             if let Some(a) = &item.alias {
                 e = e.alias(a);
             } else {
-                let cypher_name = super::aliases::to_cypher_column_name(&prop.variable, &prop.property);
+                let cypher_name =
+                    super::aliases::to_cypher_column_name(&prop.variable, &prop.property);
                 e = e.alias(cypher_name);
             }
             proj.push(e);
