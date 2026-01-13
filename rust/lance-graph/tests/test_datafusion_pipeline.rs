@@ -4155,11 +4155,10 @@ async fn test_toupper_with_contains() {
     let person_batch = create_person_dataset();
 
     // Search for names containing 'BOB' (case-insensitive via toUpper)
-    let query = CypherQuery::new(
-        "MATCH (p:Person) WHERE toUpper(p.name) CONTAINS 'BOB' RETURN p.name",
-    )
-    .unwrap()
-    .with_config(config);
+    let query =
+        CypherQuery::new("MATCH (p:Person) WHERE toUpper(p.name) CONTAINS 'BOB' RETURN p.name")
+            .unwrap()
+            .with_config(config);
 
     let mut datasets = HashMap::new();
     datasets.insert("Person".to_string(), person_batch);

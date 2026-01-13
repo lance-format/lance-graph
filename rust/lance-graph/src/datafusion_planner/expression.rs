@@ -7,9 +7,9 @@
 
 use crate::ast::{BooleanExpression, PropertyValue, ValueExpression};
 use crate::datafusion_planner::udf;
-use datafusion::logical_expr::{col, lit, BinaryExpr, Expr, Operator};
 use datafusion::functions::string::lower;
 use datafusion::functions::string::upper;
+use datafusion::logical_expr::{col, lit, BinaryExpr, Expr, Operator};
 use datafusion_functions_aggregate::average::avg;
 use datafusion_functions_aggregate::count::count;
 use datafusion_functions_aggregate::min_max::max;
