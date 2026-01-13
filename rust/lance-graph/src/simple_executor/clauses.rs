@@ -37,6 +37,9 @@ pub(super) fn apply_return_with_qualifier(
             let mut e = datafusion::logical_expr::col(col_name);
             if let Some(a) = &item.alias {
                 e = e.alias(a);
+            } else {
+                let cypher_name = super::aliases::to_cypher_column_name(&prop.variable, &prop.property);
+                e = e.alias(cypher_name);
             }
             proj.push(e);
         }
