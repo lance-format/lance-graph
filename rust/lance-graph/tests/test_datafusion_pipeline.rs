@@ -4244,3 +4244,70 @@ async fn test_tolower_with_integer_column_in_return() {
     assert_eq!(names.value(0), "Charlie");
     assert_eq!(ages.value(0), 30);
 }
+
+#[tokio::test]
+async fn test_collect_property() {
+    // Test COLLECT aggregation - collects values into an array
+    let person_batch = create_person_dataset();
+    let config = GraphConfig::builder()
+        .with_node_label("Person", "id")
+        .build()
+        .unwrap();
+
+    let query = CypherQuery::new("MATCH (p:Person) RETURN collect(p.name) AS all_names")
+        .unwrap()
+        .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // COLLECT returns a single row with an array of all values
+    assert_eq!(result.num_rows(), 1);
+    // Verify the column exists
+    assert!(result.column_by_name("all_names").is_some());
+}
+
+#[tokio::test]
+async fn test_collect_with_grouping() {
+    // Test COLLECT with GROUP BY - collect names grouped by city
+    let person_batch = create_person_dataset();
+    let config = GraphConfig::builder()
+        .with_node_label("Person", "id")
+        .build()
+        .unwrap();
+
+    let query = CypherQuery::new(
+        "MATCH (p:Person) WHERE p.city IS NOT NULL RETURN p.city, collect(p.name) AS names ORDER BY p.city",
+    )
+    .unwrap()
+    .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should have one row per city (4 cities with non-null values)
+    assert_eq!(result.num_rows(), 4);
+
+    let cities = result
+        .column_by_name("p.city")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    // Cities should be ordered: Chicago, New York, San Francisco, Seattle
+    assert_eq!(cities.value(0), "Chicago");
+    assert_eq!(cities.value(1), "New York");
+    assert_eq!(cities.value(2), "San Francisco");
+    assert_eq!(cities.value(3), "Seattle");
+}

@@ -289,7 +289,7 @@ impl SemanticAnalyzer {
             ValueExpression::Function { name, args } => {
                 // Validate function-specific arity and signature rules
                 match name.to_lowercase().as_str() {
-                    "count" | "sum" | "avg" | "min" | "max" => {
+                    "count" | "sum" | "avg" | "min" | "max" | "collect" => {
                         if args.len() != 1 {
                             return Err(GraphError::PlanError {
                                 message: format!(
@@ -302,7 +302,7 @@ impl SemanticAnalyzer {
                         }
 
                         // Additional validation for SUM, AVG, MIN, MAX: they require properties, not bare variables
-                        // Only COUNT allows bare variables (COUNT(*) or COUNT(p))
+                        // Only COUNT and COLLECT allow bare variables (COUNT(*), COUNT(p), COLLECT(p))
                         if matches!(name.to_lowercase().as_str(), "sum" | "avg" | "min" | "max") {
                             if let Some(ValueExpression::Variable(v)) = args.first() {
                                 return Err(GraphError::PlanError {

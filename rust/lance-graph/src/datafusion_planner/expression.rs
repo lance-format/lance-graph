@@ -10,6 +10,7 @@ use crate::datafusion_planner::udf;
 use datafusion::functions::string::lower;
 use datafusion::functions::string::upper;
 use datafusion::logical_expr::{col, lit, BinaryExpr, Expr, Operator};
+use datafusion_functions_aggregate::array_agg::array_agg;
 use datafusion_functions_aggregate::average::avg;
 use datafusion_functions_aggregate::count::count;
 use datafusion_functions_aggregate::min_max::max;
@@ -188,6 +189,15 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
                         lit(0)
                     }
                 }
+                // COLLECT aggregation - collects values into an array
+                "collect" => {
+                    if args.len() == 1 {
+                        let arg_expr = to_df_value_expr(&args[0]);
+                        array_agg(arg_expr)
+                    } else {
+                        lit(0)
+                    }
+                }
                 // String functions
                 "tolower" | "lower" => {
                     if args.len() == 1 {
@@ -307,7 +317,7 @@ pub(crate) fn contains_aggregate(expr: &ValueExpression) -> bool {
             // Check if this is an aggregate function
             let is_aggregate = matches!(
                 name.to_lowercase().as_str(),
-                "count" | "sum" | "avg" | "min" | "max"
+                "count" | "sum" | "avg" | "min" | "max" | "collect"
             );
             // Also check arguments recursively
             is_aggregate || args.iter().any(contains_aggregate)
