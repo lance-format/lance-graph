@@ -47,6 +47,7 @@ build-backend = "maturin"
 [project.optional-dependencies]
 tests = ["pytest", "pyarrow>=14", "pandas", "ruff"]
 dev = ["ruff", "pyright"]
+ui = ["streamlit>=1.30.0", "streamlit-agraph>=0.0.45"]
 
 [project.scripts]
 knowledge_graph = "knowledge_graph.main:main"
