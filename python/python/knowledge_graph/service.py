@@ -116,9 +116,18 @@ class LanceKnowledgeGraph:
         *,
         datasets: Optional[Mapping[str, pa.Table]] = None,
     ) -> pa.Table:
-        """Execute a Cypher statement against Lance datasets."""
+        """Execute a Cypher statement against Lance datasets.
+
+        Only loads the datasets referenced in the query, avoiding expensive
+        enumeration of all datasets on cloud storage.
+        """
         query = CypherQuery(statement).with_config(self._config)
-        base_tables: MutableMapping[str, "pa.Table"] = dict(self._store.load_tables())
+
+        # Only load tables that are actually referenced in the query
+        referenced_tables = set(query.node_labels()) | set(query.relationship_types())
+        base_tables: MutableMapping[str, "pa.Table"] = dict(
+            self._store.load_tables(referenced_tables)
+        )
         if datasets:
             base_tables.update(datasets)
         return query.execute(base_tables)

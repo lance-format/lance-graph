@@ -138,16 +138,26 @@ class LanceGraphStore:
         self,
         names: Optional[Iterable[str]] = None,
     ) -> Mapping[str, "pa.Table"]:
-        """Load Lance datasets as PyArrow tables."""
+        """Load Lance datasets as PyArrow tables.
+
+        When specific names are provided, this method computes paths directly
+        without enumerating all datasets - significantly faster on cloud storage.
+        """
         lance = self._get_lance()
 
         self.ensure_layout()
-        available = self.list_datasets()
-        requested = list(names) if names is not None else list(available.keys())
+
+        # Only enumerate datasets when no specific names are requested
+        if names is not None:
+            requested = list(names)
+        else:
+            available = self.list_datasets()
+            requested = list(available.keys())
 
         tables: Dict[str, "pa.Table"] = {}
         for name in requested:
-            path = available.get(name, self._dataset_path(name))
+            # Compute path directly - no need to look up from enumeration
+            path = self._dataset_path(name)
             if not self._path_exists(path):
                 raise FileNotFoundError(f"Dataset '{name}' not found at {path}")
             dataset = lance.dataset(
