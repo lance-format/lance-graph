@@ -22,9 +22,9 @@ use arrow::ffi_stream::ArrowArrayStreamReader;
 use arrow_array::{RecordBatch, RecordBatchReader};
 use arrow_schema::Schema;
 use lance_graph::{
-    ExecutionStrategy as RustExecutionStrategy, CypherQuery as RustCypherQuery,
-    GraphConfig as RustGraphConfig, GraphError as RustGraphError,
-    VectorSearch as RustVectorSearch, ast::DistanceMetric as RustDistanceMetric,
+    ast::DistanceMetric as RustDistanceMetric, CypherQuery as RustCypherQuery,
+    ExecutionStrategy as RustExecutionStrategy, GraphConfig as RustGraphConfig,
+    GraphError as RustGraphError, VectorSearch as RustVectorSearch,
 };
 use pyo3::{
     exceptions::{PyNotImplementedError, PyRuntimeError, PyValueError},
@@ -34,6 +34,7 @@ use pyo3::{
 };
 use serde_json::Value as JsonValue;
 
+use crate::namespace::PyDirNamespace;
 use crate::RT;
 
 /// Execution strategy for Cypher queries
@@ -537,6 +538,45 @@ impl CypherQuery {
         record_batch_to_python_table(py, &result_batch)
     }
 
+    /// Execute query using a namespace resolver.
+    ///
+    /// Parameters
+    /// ----------
+    /// namespace : DirNamespace
+    ///     Directory-backed namespace that resolves table names to Lance datasets.
+    /// strategy : ExecutionStrategy, optional
+    ///     Execution strategy to use (defaults to DataFusion)
+    ///
+    /// Returns
+    /// -------
+    /// pyarrow.Table
+    ///     Query results as Arrow table
+    ///
+    /// Raises
+    /// ------
+    /// RuntimeError
+    ///     If query execution fails
+    #[pyo3(signature = (namespace, strategy=None))]
+    fn execute_with_namespace(
+        &self,
+        py: Python,
+        namespace: &Bound<'_, PyDirNamespace>,
+        strategy: Option<ExecutionStrategy>,
+    ) -> PyResult<PyObject> {
+        let rust_strategy = strategy.map(|s| s.into());
+        let inner_query = self.inner.clone();
+        let namespace_arc = namespace.borrow().inner.clone();
+
+        let result_batch = RT
+            .block_on(
+                Some(py),
+                inner_query.execute_with_namespace_arc(namespace_arc, rust_strategy),
+            )?
+            .map_err(graph_error_to_pyerr)?;
+
+        record_batch_to_python_table(py, &result_batch)
+    }
+
     /// Explain query using the DataFusion planner with in-memory datasets
     ///
     /// Parameters
@@ -641,7 +681,10 @@ impl CypherQuery {
 
         // Execute via runtime
         let result = RT
-            .block_on(Some(py), inner_query.execute_with_vector_rerank(arrow_datasets, vs))?
+            .block_on(
+                Some(py),
+                inner_query.execute_with_vector_rerank(arrow_datasets, vs),
+            )?
             .map_err(graph_error_to_pyerr)?;
 
         record_batch_to_python_table(py, &result)
@@ -840,6 +883,7 @@ pub fn register_graph_module(py: Python, parent_module: &Bound<'_, PyModule>) ->
     graph_module.add_class::<GraphConfigBuilder>()?;
     graph_module.add_class::<CypherQuery>()?;
     graph_module.add_class::<VectorSearch>()?;
+    graph_module.add_class::<PyDirNamespace>()?;
 
     parent_module.add_submodule(&graph_module)?;
     Ok(())

@@ -77,6 +77,7 @@ markers = [
     "slow",
     "torch: tests which rely on pytorch being installed",
     "recurring: marks tests as recurring tests",
+    "requires_lance: tests that need the Lance Python bindings available",
 ]
 filterwarnings = [
     'error::FutureWarning',

@@ -3,7 +3,7 @@
 
 import pyarrow as pa
 import pytest
-from lance_graph import CypherQuery, GraphConfig
+from lance_graph import CypherQuery, DirNamespace, GraphConfig
 
 
 @pytest.fixture
@@ -194,3 +194,24 @@ def test_distinct_clause(graph_env):
 
     assert len(data["c.company_name"]) == 3
     assert set(data["c.company_name"]) == {"TechCorp", "DataInc", "CloudSoft"}
+
+
+@pytest.mark.requires_lance
+def test_execute_with_directory_namespace(graph_env, tmp_path):
+    config, datasets, _ = graph_env
+
+    from lance import write_dataset
+
+    for name, table in datasets.items():
+        write_dataset(table, tmp_path / f"{name}.lance")
+
+    namespace = DirNamespace(str(tmp_path))
+
+    query = CypherQuery("MATCH (p:Person) WHERE p.age > 30 RETURN p.name").with_config(
+        config
+    )
+
+    result = query.execute_with_namespace(namespace)
+    data = result.to_pydict()
+
+    assert set(data["p.name"]) == {"Bob", "David"}

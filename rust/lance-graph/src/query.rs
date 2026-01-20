@@ -7,11 +7,13 @@ use crate::ast::CypherQuery as CypherAST;
 use crate::config::GraphConfig;
 use crate::error::{GraphError, Result};
 use crate::logical_plan::LogicalPlanner;
+use crate::namespace::DirNamespace;
 use crate::parser::parse_cypher_query;
 use crate::simple_executor::{
     to_df_boolean_expr_simple, to_df_order_by_expr_simple, to_df_value_expr_simple, PathExecutor,
 };
-use std::collections::HashMap;
+use lance_namespace::models::DescribeTableRequest;
+use std::collections::{HashMap, HashSet};
 
 /// Execution strategy for Cypher queries
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -144,6 +146,57 @@ impl CypherQuery {
         match strategy {
             ExecutionStrategy::DataFusion => self.execute_datafusion(datasets).await,
             ExecutionStrategy::Simple => self.execute_simple(datasets).await,
+            ExecutionStrategy::LanceNative => Err(GraphError::UnsupportedFeature {
+                feature: "Lance native execution strategy is not yet implemented".to_string(),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            }),
+        }
+    }
+
+    /// Execute the query using a namespace-backed table resolver.
+    ///
+    /// The namespace is provided by value and will be shared internally as needed.
+    pub async fn execute_with_namespace(
+        &self,
+        namespace: DirNamespace,
+        strategy: Option<ExecutionStrategy>,
+    ) -> Result<arrow::record_batch::RecordBatch> {
+        self.execute_with_namespace_arc(std::sync::Arc::new(namespace), strategy)
+            .await
+    }
+
+    /// Execute the query using a shared namespace instance.
+    pub async fn execute_with_namespace_arc(
+        &self,
+        namespace: std::sync::Arc<DirNamespace>,
+        strategy: Option<ExecutionStrategy>,
+    ) -> Result<arrow::record_batch::RecordBatch> {
+        let namespace_trait: std::sync::Arc<dyn lance_namespace::LanceNamespace + Send + Sync> =
+            namespace;
+        self.execute_with_namespace_internal(namespace_trait, strategy)
+            .await
+    }
+
+    async fn execute_with_namespace_internal(
+        &self,
+        namespace: std::sync::Arc<dyn lance_namespace::LanceNamespace + Send + Sync>,
+        strategy: Option<ExecutionStrategy>,
+    ) -> Result<arrow::record_batch::RecordBatch> {
+        let strategy = strategy.unwrap_or_default();
+        match strategy {
+            ExecutionStrategy::DataFusion => {
+                let (catalog, ctx) = self
+                    .build_catalog_and_context_from_namespace(namespace)
+                    .await?;
+                self.execute_with_catalog_and_context(std::sync::Arc::new(catalog), ctx)
+                    .await
+            }
+            ExecutionStrategy::Simple => Err(GraphError::UnsupportedFeature {
+                feature:
+                    "Simple execution strategy is not supported for namespace-backed execution"
+                        .to_string(),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            }),
             ExecutionStrategy::LanceNative => Err(GraphError::UnsupportedFeature {
                 feature: "Lance native execution strategy is not yet implemented".to_string(),
                 location: snafu::Location::new(file!(), line!(), column!()),
@@ -517,6 +570,119 @@ impl CypherQuery {
             catalog = catalog
                 .with_node_source(name, table_source.clone())
                 .with_relationship_source(name, table_source);
+        }
+
+        Ok((catalog, ctx))
+    }
+
+    /// Helper to build catalog and context using a namespace resolver
+    async fn build_catalog_and_context_from_namespace(
+        &self,
+        namespace: std::sync::Arc<dyn lance_namespace::LanceNamespace + Send + Sync>,
+    ) -> Result<(
+        crate::source_catalog::InMemoryCatalog,
+        datafusion::execution::context::SessionContext,
+    )> {
+        use crate::source_catalog::InMemoryCatalog;
+        use datafusion::datasource::{DefaultTableSource, TableProvider};
+        use datafusion::execution::context::SessionContext;
+        use lance::datafusion::LanceTableProvider;
+        use std::sync::Arc;
+
+        let config = self.require_config()?;
+
+        let mut required_tables: HashSet<String> = HashSet::new();
+        required_tables.extend(config.node_mappings.keys().cloned());
+        required_tables.extend(config.relationship_mappings.keys().cloned());
+
+        if required_tables.is_empty() {
+            return Err(GraphError::ConfigError {
+                message:
+                    "Graph configuration does not reference any node labels or relationship types"
+                        .to_string(),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            });
+        }
+
+        let ctx = SessionContext::new();
+        let mut catalog = InMemoryCatalog::new();
+        let mut providers: HashMap<String, Arc<dyn TableProvider>> = HashMap::new();
+
+        for table_name in required_tables {
+            let mut request = DescribeTableRequest::new();
+            request.id = Some(vec![table_name.clone()]);
+
+            let response =
+                namespace
+                    .describe_table(request)
+                    .await
+                    .map_err(|e| GraphError::ConfigError {
+                        message: format!(
+                            "Namespace failed to resolve table '{}': {}",
+                            table_name, e
+                        ),
+                        location: snafu::Location::new(file!(), line!(), column!()),
+                    })?;
+
+            let location = response.location.ok_or_else(|| GraphError::ConfigError {
+                message: format!(
+                    "Namespace did not provide a location for table '{}'",
+                    table_name
+                ),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            })?;
+
+            let dataset = lance::dataset::Dataset::open(&location)
+                .await
+                .map_err(|e| GraphError::ConfigError {
+                    message: format!("Failed to open dataset for table '{}': {}", table_name, e),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
+
+            let dataset = Arc::new(dataset);
+            let provider: Arc<dyn TableProvider> =
+                Arc::new(LanceTableProvider::new(dataset.clone(), true, true));
+
+            ctx.register_table(&table_name, provider.clone())
+                .map_err(|e| GraphError::PlanError {
+                    message: format!(
+                        "Failed to register table '{}' in SessionContext: {}",
+                        table_name, e
+                    ),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
+
+            providers.insert(table_name, provider);
+        }
+
+        for label in config.node_mappings.keys() {
+            let provider = providers
+                .get(label)
+                .ok_or_else(|| GraphError::ConfigError {
+                    message: format!(
+                        "Namespace did not resolve dataset for node label '{}'",
+                        label
+                    ),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
+
+            let table_source = Arc::new(DefaultTableSource::new(provider.clone()));
+            catalog = catalog.with_node_source(label, table_source);
+        }
+
+        for rel_type in config.relationship_mappings.keys() {
+            let provider = providers
+                .get(rel_type)
+                .ok_or_else(|| GraphError::ConfigError {
+                    message: format!(
+                        "Namespace did not resolve dataset for relationship type '{}'",
+                        rel_type
+                    ),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
+
+            let table_source = Arc::new(DefaultTableSource::new(provider.clone()));
+            catalog = catalog.with_relationship_source(rel_type, table_source);
         }
 
         Ok((catalog, ctx))
@@ -1959,5 +2125,110 @@ mod tests {
         // Note: DataFusion unparser might quote identifiers or use aliases
         // We check for "p.name" which is the expected output alias
         assert!(sql.contains("p.name"));
+    }
+
+    async fn write_lance_dataset(path: &std::path::Path, batch: arrow_array::RecordBatch) {
+        use arrow_array::{RecordBatch, RecordBatchIterator};
+        use lance::dataset::{Dataset, WriteParams};
+
+        let schema = batch.schema();
+        let batches: Vec<std::result::Result<RecordBatch, arrow::error::ArrowError>> =
+            vec![std::result::Result::Ok(batch)];
+        let reader = RecordBatchIterator::new(batches.into_iter(), schema);
+
+        Dataset::write(reader, path.to_str().unwrap(), None::<WriteParams>)
+            .await
+            .expect("write lance dataset");
+    }
+
+    fn build_people_batch() -> arrow_array::RecordBatch {
+        use arrow_array::{ArrayRef, Int32Array, Int64Array, RecordBatch, StringArray};
+        use arrow_schema::{DataType, Field, Schema};
+        use std::sync::Arc;
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("person_id", DataType::Int64, false),
+            Field::new("name", DataType::Utf8, false),
+            Field::new("age", DataType::Int32, false),
+        ]));
+
+        let columns: Vec<ArrayRef> = vec![
+            Arc::new(Int64Array::from(vec![1, 2, 3, 4])) as ArrayRef,
+            Arc::new(StringArray::from(vec!["Alice", "Bob", "Carol", "David"])) as ArrayRef,
+            Arc::new(Int32Array::from(vec![28, 34, 29, 42])) as ArrayRef,
+        ];
+
+        RecordBatch::try_new(schema, columns).expect("valid person batch")
+    }
+
+    fn build_friendship_batch() -> arrow_array::RecordBatch {
+        use arrow_array::{ArrayRef, Int64Array, RecordBatch};
+        use arrow_schema::{DataType, Field, Schema};
+        use std::sync::Arc;
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("person1_id", DataType::Int64, false),
+            Field::new("person2_id", DataType::Int64, false),
+        ]));
+
+        let columns: Vec<ArrayRef> = vec![
+            Arc::new(Int64Array::from(vec![1, 1, 2, 3])) as ArrayRef,
+            Arc::new(Int64Array::from(vec![2, 3, 4, 4])) as ArrayRef,
+        ];
+
+        RecordBatch::try_new(schema, columns).expect("valid friendship batch")
+    }
+
+    #[tokio::test]
+    async fn executes_against_directory_namespace() {
+        use arrow_array::StringArray;
+        use tempfile::tempdir;
+
+        let tmp_dir = tempdir().unwrap();
+        write_lance_dataset(&tmp_dir.path().join("Person.lance"), build_people_batch()).await;
+        write_lance_dataset(
+            &tmp_dir.path().join("FRIEND_OF.lance"),
+            build_friendship_batch(),
+        )
+        .await;
+
+        let config = GraphConfig::builder()
+            .with_node_label("Person", "person_id")
+            .with_relationship("FRIEND_OF", "person1_id", "person2_id")
+            .build()
+            .expect("valid graph config");
+
+        let query = CypherQuery::new("MATCH (p:Person) WHERE p.age > 30 RETURN p.name")
+            .expect("query parses")
+            .with_config(config);
+
+        let namespace = DirNamespace::new(tmp_dir.path().to_string_lossy().into_owned());
+
+        let result = query
+            .execute_with_namespace(namespace.clone(), None)
+            .await
+            .expect("namespace execution succeeds");
+
+        use arrow_array::Array;
+        let names = result
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .expect("string column");
+
+        let mut values: Vec<String> = (0..names.len())
+            .map(|i| names.value(i).to_string())
+            .collect();
+        values.sort();
+        assert_eq!(values, vec!["Bob".to_string(), "David".to_string()]);
+
+        let err = query
+            .execute_with_namespace(namespace, Some(ExecutionStrategy::Simple))
+            .await
+            .expect_err("simple strategy not supported");
+        assert!(
+            matches!(err, GraphError::UnsupportedFeature { .. }),
+            "expected unsupported feature error, got {err:?}"
+        );
     }
 }

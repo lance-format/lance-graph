@@ -73,6 +73,7 @@ GraphConfigBuilder = _bindings.graph.GraphConfigBuilder
 CypherQuery = _bindings.graph.CypherQuery
 VectorSearch = _bindings.graph.VectorSearch
 DistanceMetric = _bindings.graph.DistanceMetric
+DirNamespace = _bindings.graph.DirNamespace
 
 __all__ = [
     "GraphConfig",
@@ -80,6 +81,7 @@ __all__ = [
     "CypherQuery",
     "VectorSearch",
     "DistanceMetric",
+    "DirNamespace",
 ]
 
 __version__ = _bindings.__version__
