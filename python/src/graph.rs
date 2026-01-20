@@ -34,6 +34,7 @@ use pyo3::{
 };
 use serde_json::Value as JsonValue;
 
+use crate::namespace::PyNamespaceAdapter;
 use crate::RT;
 
 /// Execution strategy for Cypher queries
@@ -490,8 +491,9 @@ impl CypherQuery {
     ///
     /// Parameters
     /// ----------
-    /// datasets : dict
-    ///     Dictionary mapping table names to Lance datasets
+    /// datasets : dict or LanceNamespace
+    ///     Either a dictionary mapping table names to Lance datasets, or a Lance
+    ///     namespace instance that can resolve table locations dynamically.
     /// strategy : ExecutionStrategy, optional
     ///     Execution strategy to use (defaults to DataFusion)
     ///
@@ -517,24 +519,37 @@ impl CypherQuery {
     fn execute(
         &self,
         py: Python,
-        datasets: &Bound<'_, PyDict>,
+        datasets: &Bound<'_, PyAny>,
         strategy: Option<ExecutionStrategy>,
     ) -> PyResult<PyObject> {
-        // Convert datasets to Arrow batches while holding the GIL
-        let arrow_datasets = python_datasets_to_batches(datasets)?;
-
-        // Convert Python strategy to Rust strategy
         let rust_strategy = strategy.map(|s| s.into());
 
-        // Clone the inner query for use in the async block
         let inner_query = self.inner.clone();
 
-        // Use RT.block_on with Some(py) like the scanner to_pyarrow method
-        let result_batch = RT
-            .block_on(Some(py), inner_query.execute(arrow_datasets, rust_strategy))?
-            .map_err(graph_error_to_pyerr)?;
+        if let Ok(dict) = datasets.downcast::<PyDict>() {
+            // Convert datasets to Arrow batches while holding the GIL
+            let arrow_datasets = python_datasets_to_batches(&dict)?;
 
-        record_batch_to_python_table(py, &result_batch)
+            // Use RT.block_on with Some(py) like the scanner to_pyarrow method
+            let result_batch = RT
+                .block_on(Some(py), inner_query.execute(arrow_datasets, rust_strategy))?
+                .map_err(graph_error_to_pyerr)?;
+
+            record_batch_to_python_table(py, &result_batch)
+        } else {
+            // Treat input as a Lance namespace catalog
+            let namespace_adapter = PyNamespaceAdapter::new(datasets.clone().unbind());
+            let namespace = Arc::new(namespace_adapter) as Arc<dyn lance_namespace::LanceNamespace>;
+
+            let result_batch = RT
+                .block_on(
+                    Some(py),
+                    inner_query.execute_with_namespace(namespace, rust_strategy),
+                )?
+                .map_err(graph_error_to_pyerr)?;
+
+            record_batch_to_python_table(py, &result_batch)
+        }
     }
 
     /// Explain query using the DataFusion planner with in-memory datasets

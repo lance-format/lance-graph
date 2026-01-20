@@ -11,6 +11,7 @@ use crate::parser::parse_cypher_query;
 use crate::simple_executor::{
     to_df_boolean_expr_simple, to_df_order_by_expr_simple, to_df_value_expr_simple, PathExecutor,
 };
+use lance_namespace::LanceNamespace;
 use std::collections::HashMap;
 
 /// Execution strategy for Cypher queries
@@ -359,6 +360,43 @@ impl CypherQuery {
             .await
     }
 
+    /// Execute query using a Lance namespace catalog
+    ///
+    /// This method resolves node labels and relationship types by querying a Lance
+    /// namespace implementation. For each required table, the namespace is asked
+    /// for its storage location, the corresponding Lance dataset is opened, and
+    /// registered with a DataFusion [`SessionContext`].
+    ///
+    /// # Arguments
+    /// * `namespace` - Lance namespace implementation capable of resolving table metadata.
+    /// * `strategy` - Optional execution strategy (defaults to DataFusion).
+    pub async fn execute_with_namespace(
+        &self,
+        namespace: std::sync::Arc<dyn LanceNamespace>,
+        strategy: Option<ExecutionStrategy>,
+    ) -> Result<arrow::record_batch::RecordBatch> {
+        let strategy = strategy.unwrap_or_default();
+        match strategy {
+            ExecutionStrategy::DataFusion => {
+                let (catalog, ctx) = self
+                    .build_catalog_and_context_from_namespace(namespace)
+                    .await?;
+                self.execute_with_catalog_and_context(std::sync::Arc::new(catalog), ctx)
+                    .await
+            }
+            ExecutionStrategy::Simple => Err(GraphError::UnsupportedFeature {
+                feature:
+                    "Simple execution strategy is not supported for namespace-backed queries"
+                        .to_string(),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            }),
+            ExecutionStrategy::LanceNative => Err(GraphError::UnsupportedFeature {
+                feature: "Lance native execution strategy is not yet implemented".to_string(),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            }),
+        }
+    }
+
     /// Execute query with an explicit catalog and session context
     ///
     /// This is the most flexible API for advanced users who want to provide their own
@@ -466,6 +504,105 @@ impl CypherQuery {
         // Delegate to common execution logic
         self.execute_with_catalog_and_context(Arc::new(catalog), ctx)
             .await
+    }
+
+    async fn build_catalog_and_context_from_namespace(
+        &self,
+        namespace: std::sync::Arc<dyn LanceNamespace>,
+    ) -> Result<(
+        crate::source_catalog::InMemoryCatalog,
+        datafusion::execution::context::SessionContext,
+    )> {
+        use crate::source_catalog::InMemoryCatalog;
+        use datafusion::datasource::{DefaultTableSource, TableProvider};
+        use datafusion::execution::context::SessionContext;
+        use lance::datafusion::LanceTableProvider;
+        use lance::dataset::builder::DatasetBuilder;
+        use std::collections::HashSet;
+        use std::sync::Arc;
+
+        let config = self.require_config()?;
+
+        let ctx = SessionContext::new();
+        let mut catalog = InMemoryCatalog::new();
+        let mut table_cache: HashMap<String, Arc<dyn TableProvider>> = HashMap::new();
+
+        let mut required_tables: HashSet<String> = HashSet::new();
+        required_tables.extend(config.node_mappings.keys().cloned());
+        required_tables.extend(config.relationship_mappings.keys().cloned());
+
+        for table_name in &required_tables {
+            if !table_cache.contains_key(table_name) {
+                let builder: DatasetBuilder = DatasetBuilder::from_namespace(
+                    namespace.clone(),
+                    vec![table_name.clone()],
+                    false,
+                )
+                .await
+                .map_err(|e| GraphError::ConfigError {
+                    message: format!(
+                        "Failed to resolve table '{}' from namespace: {}",
+                        table_name, e
+                    ),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
+
+                let dataset = builder.load().await.map_err(|e| GraphError::ExecutionError {
+                    message: format!(
+                        "Failed to load dataset '{}' from namespace: {}",
+                        table_name, e
+                    ),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
+
+                let dataset = Arc::new(dataset);
+                let provider: Arc<dyn TableProvider> =
+                    Arc::new(LanceTableProvider::new(dataset, true, true));
+
+                ctx.register_table(table_name, provider.clone())
+                    .map_err(|e| GraphError::PlanError {
+                        message: format!(
+                            "Failed to register namespace table '{}' with SessionContext: {}",
+                            table_name, e
+                        ),
+                        location: snafu::Location::new(file!(), line!(), column!()),
+                    })?;
+
+                table_cache.insert(table_name.clone(), provider);
+            }
+        }
+
+        for label in config.node_mappings.keys() {
+            if let Some(provider) = table_cache.get(label) {
+                let table_source = Arc::new(DefaultTableSource::new(provider.clone()));
+                catalog = catalog.with_node_source(label, table_source);
+            } else {
+                return Err(GraphError::ConfigError {
+                    message: format!(
+                        "Namespace did not return dataset for node label '{}'",
+                        label
+                    ),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                });
+            }
+        }
+
+        for rel_type in config.relationship_mappings.keys() {
+            if let Some(provider) = table_cache.get(rel_type) {
+                let table_source = Arc::new(DefaultTableSource::new(provider.clone()));
+                catalog = catalog.with_relationship_source(rel_type, table_source);
+            } else {
+                return Err(GraphError::ConfigError {
+                    message: format!(
+                        "Namespace did not return dataset for relationship '{}'",
+                        rel_type
+                    ),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                });
+            }
+        }
+
+        Ok((catalog, ctx))
     }
 
     /// Helper to build catalog and context from in-memory datasets

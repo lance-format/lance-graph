@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright The Lance Authors
 
+from pathlib import Path
+
 import pyarrow as pa
 import pytest
 from lance_graph import CypherQuery, GraphConfig
@@ -194,3 +196,32 @@ def test_distinct_clause(graph_env):
 
     assert len(data["c.company_name"]) == 3
     assert set(data["c.company_name"]) == {"TechCorp", "DataInc", "CloudSoft"}
+
+
+def test_execute_with_directory_namespace(graph_env, tmp_path, monkeypatch):
+    config, datasets, _ = graph_env
+
+    repo_root = Path(__file__).resolve().parents[3]
+    monkeypatch.syspath_prepend(str(repo_root / "lance" / "python" / "python"))
+    monkeypatch.syspath_prepend(str(repo_root / "lance-namespace" / "python"))
+
+    try:
+        from lance import write_dataset
+        from lance_namespace import connect
+    except ImportError:
+        pytest.skip("Lance namespace dependencies not available")
+
+    for name, table in datasets.items():
+        write_dataset(table, tmp_path / f"{name}.lance")
+
+    catalog = connect("dir", {"root": str(tmp_path)})
+
+    query = (
+        CypherQuery("MATCH (p:Person) WHERE p.age > 30 RETURN p.name")
+        .with_config(config)
+    )
+
+    result = query.execute(catalog)
+    data = result.to_pydict()
+
+    assert set(data["p.name"]) == {"Bob", "David"}

@@ -3443,6 +3443,7 @@ dependencies = [
  "futures",
  "lance",
  "lance-linalg",
+ "lance-namespace",
  "nom 7.1.3",
  "serde",
  "serde_json",
@@ -3457,11 +3458,14 @@ dependencies = [
  "arrow-array",
  "arrow-ipc",
  "arrow-schema",
+ "async-trait",
  "futures",
  "lance-graph",
+ "lance-namespace",
  "pyo3",
  "serde",
  "serde_json",
+ "snafu",
  "tokio",
 ]
 

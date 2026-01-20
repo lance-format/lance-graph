@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 
 mod executor;
 mod graph;
+mod namespace;
 
 pub(crate) static RT: LazyLock<executor::BackgroundExecutor> =
     LazyLock::new(executor::BackgroundExecutor::new);
