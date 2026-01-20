@@ -74,12 +74,59 @@ CypherQuery = _bindings.graph.CypherQuery
 VectorSearch = _bindings.graph.VectorSearch
 DistanceMetric = _bindings.graph.DistanceMetric
 
+
+def execute_with_store(query, store, config=None):
+    """Execute a Cypher query using tables from a LanceGraphStore.
+
+    Parameters
+    ----------
+    query : CypherQuery
+        The parsed Cypher query
+    store : LanceGraphStore
+        The store containing Lance datasets
+    config : GraphConfig, optional
+        Graph configuration. If not provided:
+        - Tries to load from store's YAML schema
+        - Falls back to convention-based inference
+
+    Returns
+    -------
+    pyarrow.Table
+        Query results
+
+    Examples
+    --------
+    >>> from lance_graph import CypherQuery, execute_with_store
+    >>> from knowledge_graph import LanceGraphStore, KnowledgeGraphConfig
+    >>> config = KnowledgeGraphConfig.from_root("s3://my-bucket/graph-data")
+    >>> store = LanceGraphStore(config)
+    >>> query = CypherQuery("MATCH (p:Person) RETURN p.name")
+    >>> result = execute_with_store(query, store)
+    """
+    # 1. Resolve config
+    if config is None:
+        try:
+            config = store.config.load_graph_config()
+        except FileNotFoundError:
+            config = store.infer_graph_config()
+
+    query = query.with_config(config)
+
+    # 2. Load only required tables (avoids full enumeration)
+    required = set(query.node_labels() + query.relationship_types())
+    tables = store.load_tables(required)
+
+    # 3. Execute
+    return query.execute(tables)
+
+
 __all__ = [
     "GraphConfig",
     "GraphConfigBuilder",
     "CypherQuery",
     "VectorSearch",
     "DistanceMetric",
+    "execute_with_store",
 ]
 
 __version__ = _bindings.__version__

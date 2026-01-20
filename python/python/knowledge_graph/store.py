@@ -182,3 +182,42 @@ class LanceGraphStore:
             lance.write_dataset(
                 table, str(path), mode=mode, storage_options=self.config.storage_options
             )
+
+    def infer_graph_config(self):
+        """Infer GraphConfig from table schemas using naming conventions.
+
+        Conventions:
+        - Tables with single *_id field → Node table (table name = label)
+        - Tables with 2+ *_id fields → Relationship table (first two are src/dst)
+
+        Returns
+        -------
+        GraphConfig
+            Inferred graph configuration based on table schemas
+
+        Raises
+        ------
+        ImportError
+            If lance_graph module is not available
+        """
+        from lance_graph import GraphConfig
+
+        lance = self._get_lance()
+        builder = GraphConfig.builder()
+
+        datasets = self.list_datasets()
+        for name, path in datasets.items():
+            dataset = lance.dataset(
+                str(path), storage_options=self.config.storage_options
+            )
+            schema = dataset.schema
+            id_fields = [f.name for f in schema if f.name.endswith("_id")]
+
+            if len(id_fields) == 1:
+                # Single ID field → Node table
+                builder = builder.with_node_label(name, id_fields[0])
+            elif len(id_fields) >= 2:
+                # Two+ ID fields → Relationship table
+                builder = builder.with_relationship(name, id_fields[0], id_fields[1])
+
+        return builder.build()
