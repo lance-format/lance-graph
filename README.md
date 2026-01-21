@@ -4,10 +4,13 @@ Lance Graph is a Cypher-capable graph query engine built in Rust with Python bin
 
 This repository contains:
 
-- `rust/lance-graph` – the Cypher-capable query engine implemented in Rust
+- `crates/lance-graph` – the Cypher-capable query engine implemented in Rust
 - `python/` – PyO3 bindings and Python packages:
   - `lance_graph` – thin wrapper around the Rust query engine
   - `knowledge_graph` – Lance-backed knowledge graph CLI, API, and utilities
+
+See `docs/project_structure.md` for the proposed workspace-based structure from
+issue #92.
 
 ## Prerequisites
 
@@ -18,7 +21,7 @@ This repository contains:
 ## Rust crate quick start
 
 ```bash
-cd rust/lance-graph
+cd crates/lance-graph
 cargo check
 cargo test
 ```
@@ -147,7 +150,7 @@ working solely on the bindings.
   - protoc: install `protobuf-compiler` (Debian/Ubuntu: `sudo apt-get install -y protobuf-compiler`).
   - Optional: gnuplot for Criterion's gnuplot backend; otherwise the plotters backend is used.
 
-- Run (from `rust/lance-graph`):
+- Run (from `crates/lance-graph`):
 
 ```bash
 cargo bench --bench graph_execution
@@ -157,8 +160,8 @@ cargo bench --bench graph_execution -- --warm-up-time 1 --measurement-time 2 --s
 ```
 
 - Reports:
-  - Global index: `rust/lance-graph/target/criterion/report/index.html`
-  - Group index: `rust/lance-graph/target/criterion/cypher_execution/report/index.html`
+  - Global index: `crates/lance-graph/target/criterion/report/index.html`
+  - Group index: `crates/lance-graph/target/criterion/cypher_execution/report/index.html`
 
 - Typical results (x86_64, quick run: warm-up 1s, measurement 2s, sample size 10):
 

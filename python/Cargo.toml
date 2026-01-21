@@ -15,7 +15,7 @@ arrow-array = "56.2"
 arrow-schema = "56.2"
 arrow-ipc = "56.2"
 futures = "0.3"
-lance-graph = { path = "../rust/lance-graph" }
+lance-graph = { path = "../crates/lance-graph" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 pyo3 = { version = "0.25", features = ["extension-module", "abi3-py39", "py-clone"] }

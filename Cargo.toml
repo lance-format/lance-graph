@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "crates/lance-graph",
+]
+resolver = "2"

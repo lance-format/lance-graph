@@ -6,7 +6,9 @@ on:
   pull_request:
     paths:
       - python/**
-      - rust/lance-graph/**
+      - crates/lance-graph/**
+      - Cargo.toml
+      - Cargo.lock
       - .github/workflows/python-test.yml
 
 concurrency:

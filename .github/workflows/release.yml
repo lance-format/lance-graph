@@ -120,7 +120,7 @@ jobs:
     - name: Update Cargo lock version (when version changes)
       if: inputs.release_type != 'current'
       run: |
-        cargo check --manifest-path rust/lance-graph/Cargo.toml
+        cargo check --manifest-path crates/lance-graph/Cargo.toml
         cargo check --manifest-path python/Cargo.toml
 
     - name: Create release commit (when version changes)

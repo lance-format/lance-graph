@@ -1,13 +1,13 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `rust/lance-graph/` hosts the Rust Cypher engine; keep new modules under `src/` and co-locate helpers inside `query/` or feature-specific submodules.
+- `crates/lance-graph/` hosts the Rust Cypher engine; keep new modules under `src/` and co-locate helpers inside `query/` or feature-specific submodules.
 - `python/src/` contains the PyO3 bridge; `python/python/lance_graph/` holds the pure-Python facade and packaging metadata.
 - `python/python/tests/` stores functional tests; mirror new features with targeted cases here and in the corresponding Rust module.
 - `examples/` demonstrates Cypher usage; update or add examples when introducing new public APIs.
 
 ## Build, Test, and Development Commands
-- `cargo check` / `cargo test --all` (run inside `rust/lance-graph`) validate Rust code paths.
+- `cargo check` / `cargo test --all` (run inside `crates/lance-graph`) validate Rust code paths.
 - `cargo bench --bench graph_execution` measures performance-critical changes; include shortened runs with `--warm-up-time 1`.
 - `uv venv --python 3.11 .venv` and `uv pip install -e '.[tests]'` bootstrap the Python workspace.
 - `maturin develop` rebuilds the extension after Rust edits; `pytest python/python/tests/ -v` exercises Python bindings.
