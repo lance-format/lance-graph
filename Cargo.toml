@@ -2,4 +2,7 @@
 members = [
     "crates/lance-graph",
 ]
+exclude = [
+    "python",
+]
 resolver = "2"
