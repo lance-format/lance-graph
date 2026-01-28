@@ -220,6 +220,10 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
                 _ => {
                     // Unsupported function - return NULL which coerces to any type
                     // This prevents type coercion errors in both string and numeric contexts
+                    //
+                    // TODO(#107): Now that semantic analysis rejects unknown functions, consider
+                    // upgrading this to a hard internal error (e.g. `unreachable!()` or returning
+                    // a planner/execution error) to catch validator regressions early.
                     Expr::Literal(datafusion::scalar::ScalarValue::Null, None)
                 }
             }
