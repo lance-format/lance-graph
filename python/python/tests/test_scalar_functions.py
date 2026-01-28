@@ -14,11 +14,10 @@ def test_unimplemented_scalar_function_errors() -> None:
     query = CypherQuery(
         "MATCH (p:Person) "
         "RETURN p.name AS name, replace(p.name, 'A', 'a') AS replaced "
-        "ORDER BY name"
+        "ORDER BY name",
     ).with_config(cfg)
 
     with pytest.raises(Exception) as excinfo:
         query.execute(datasets)
 
     assert "replace" in str(excinfo.value).lower()
-
