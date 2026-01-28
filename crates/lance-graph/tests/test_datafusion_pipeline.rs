@@ -4506,3 +4506,88 @@ async fn test_with_post_match_chaining() {
     assert!(result.column_by_name("city").is_some());
     assert!(result.column_by_name("cnt").is_some());
 }
+
+// ============================================================================
+// Scalar Function / Semantic Validation Regression Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_unimplemented_scalar_function_errors() {
+    let person_batch = create_person_dataset();
+    let config = GraphConfig::builder()
+        .with_node_label("Person", "id")
+        .build()
+        .unwrap();
+
+    let query = CypherQuery::new(
+        "MATCH (p:Person) RETURN p.name AS name, replace(p.name, 'A', 'a') AS replaced",
+    )
+    .unwrap()
+    .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let err = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .expect_err("replace() should error until implemented");
+
+    let message = err.to_string().to_lowercase();
+    assert!(message.contains("replace"), "unexpected error: {err}");
+    assert!(
+        message.contains("not implemented") || message.contains("unsupported"),
+        "unexpected error: {err}"
+    );
+}
+
+#[tokio::test]
+async fn test_tolower_works_in_simple_executor() {
+    let person_batch = create_person_dataset();
+    let config = GraphConfig::builder()
+        .with_node_label("Person", "id")
+        .build()
+        .unwrap();
+
+    let query = CypherQuery::new(
+        "MATCH (p:Person) RETURN p.name AS name, tolower(p.name) AS lowered ORDER BY name",
+    )
+    .unwrap()
+    .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::Simple))
+        .await
+        .unwrap();
+
+    let names = result
+        .column_by_name("name")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    let lowered = result
+        .column_by_name("lowered")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    let got: Vec<(String, String)> = (0..result.num_rows())
+        .map(|i| (names.value(i).to_string(), lowered.value(i).to_string()))
+        .collect();
+
+    assert_eq!(
+        got,
+        vec![
+            ("Alice".to_string(), "alice".to_string()),
+            ("Bob".to_string(), "bob".to_string()),
+            ("Charlie".to_string(), "charlie".to_string()),
+            ("David".to_string(), "david".to_string()),
+            ("Eve".to_string(), "eve".to_string()),
+        ]
+    );
+}
