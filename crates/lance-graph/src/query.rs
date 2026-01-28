@@ -4,8 +4,8 @@
 //! High-level Cypher query interface for Lance datasets
 
 use crate::ast::CypherQuery as CypherAST;
-use crate::config::GraphConfig;
 use crate::ast::ReadingClause;
+use crate::config::GraphConfig;
 use crate::error::{GraphError, Result};
 use crate::logical_plan::LogicalPlanner;
 use crate::namespace::DirNamespace;
@@ -1052,7 +1052,7 @@ impl CypherQuery {
         let mut variables = Vec::new();
 
         for clause in &self.ast.reading_clauses {
-             match clause {
+            match clause {
                 ReadingClause::Match(match_clause) => {
                     for pattern in &match_clause.patterns {
                         self.collect_variables_from_pattern(pattern, &mut variables);
@@ -1354,7 +1354,11 @@ impl CypherQueryBuilder {
         }
 
         let ast = crate::ast::CypherQuery {
-            reading_clauses: self.match_clauses.into_iter().map(crate::ast::ReadingClause::Match).collect(),
+            reading_clauses: self
+                .match_clauses
+                .into_iter()
+                .map(crate::ast::ReadingClause::Match)
+                .collect(),
             where_clause: self
                 .where_expression
                 .map(|expr| crate::ast::WhereClause { expression: expr }),

@@ -41,30 +41,30 @@ impl CypherQuery {
         for clause in &self.reading_clauses {
             if let ReadingClause::Match(match_clause) = clause {
                 for pattern in &match_clause.patterns {
-                match pattern {
-                    GraphPattern::Node(node) => {
-                        for label in &node.labels {
-                            if !labels.contains(label) {
-                                labels.push(label.clone());
-                            }
-                        }
-                    }
-                    GraphPattern::Path(path) => {
-                        for label in &path.start_node.labels {
-                            if !labels.contains(label) {
-                                labels.push(label.clone());
-                            }
-                        }
-                        for segment in &path.segments {
-                            for label in &segment.end_node.labels {
+                    match pattern {
+                        GraphPattern::Node(node) => {
+                            for label in &node.labels {
                                 if !labels.contains(label) {
                                     labels.push(label.clone());
                                 }
                             }
                         }
+                        GraphPattern::Path(path) => {
+                            for label in &path.start_node.labels {
+                                if !labels.contains(label) {
+                                    labels.push(label.clone());
+                                }
+                            }
+                            for segment in &path.segments {
+                                for label in &segment.end_node.labels {
+                                    if !labels.contains(label) {
+                                        labels.push(label.clone());
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-            }
             }
         }
         labels
@@ -83,8 +83,11 @@ impl CypherQuery {
         types
     }
 
-
-    fn collect_relationship_types_from_pattern(&self, pattern: &GraphPattern, types: &mut Vec<String>) {
+    fn collect_relationship_types_from_pattern(
+        &self,
+        pattern: &GraphPattern,
+        types: &mut Vec<String>,
+    ) {
         if let GraphPattern::Path(path) = pattern {
             for segment in &path.segments {
                 for rel_type in &segment.relationship.types {
@@ -96,7 +99,6 @@ impl CypherQuery {
         }
     }
 }
-
 
 /// A clause that reads from the graph (MATCH, UNWIND)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

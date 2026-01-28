@@ -153,23 +153,23 @@ impl SemanticAnalyzer {
     /// Analyze UNWIND clause and register variables
     fn analyze_unwind_clause(&mut self, unwind_clause: &UnwindClause) -> Result<()> {
         self.analyze_value_expression(&unwind_clause.expression)?;
-        
+
         // Register the aliased variable
         let var_name = &unwind_clause.alias;
         if let Some(existing) = self.variables.get_mut(var_name) {
             // Shadowing or redefinition - in Cypher variables can be bound multiple times in some contexts
-            // But here we enforce uniqueness of types mostly. 
+            // But here we enforce uniqueness of types mostly.
             // For now, treat UNWIND alias as a Property type variable.
             if existing.variable_type != VariableType::Property {
-                 return Err(GraphError::PlanError {
-                     message: format!("Variable '{}' redefined with different type", var_name),
-                     location: snafu::Location::new(file!(), line!(), column!()),
-                 });
+                return Err(GraphError::PlanError {
+                    message: format!("Variable '{}' redefined with different type", var_name),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                });
             }
         } else {
             let var_info = VariableInfo {
                 name: var_name.clone(),
-                variable_type: VariableType::Property, 
+                variable_type: VariableType::Property,
                 labels: vec![],
                 properties: HashSet::new(),
                 defined_in: self.current_scope.clone(),
@@ -609,9 +609,8 @@ mod tests {
     use super::*;
     use crate::ast::{
         ArithmeticOperator, BooleanExpression, CypherQuery, GraphPattern, LengthRange, MatchClause,
-        NodePattern, PathPattern, PathSegment, PropertyRef, PropertyValue,
-        RelationshipDirection, RelationshipPattern, ReturnClause, ReturnItem, UnwindClause,
-        ValueExpression, WhereClause,
+        NodePattern, PathPattern, PathSegment, PropertyRef, PropertyValue, RelationshipDirection,
+        RelationshipPattern, ReturnClause, ReturnItem, UnwindClause, ValueExpression, WhereClause,
     };
     use crate::config::{GraphConfig, NodeMapping};
 

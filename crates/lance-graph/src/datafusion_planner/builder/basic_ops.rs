@@ -142,7 +142,6 @@ impl DataFusionPlanner {
             .map_err(|e| self.plan_error("Failed to build plan", e))
     }
 
-
     pub(crate) fn build_unwind(
         &self,
         ctx: &mut PlanningContext,
