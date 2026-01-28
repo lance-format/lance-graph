@@ -721,7 +721,13 @@ impl CypherQuery {
 
         // Phase 1: Semantic Analysis
         let mut analyzer = SemanticAnalyzer::new(config.clone());
-        analyzer.analyze(&self.ast)?;
+        let semantic = analyzer.analyze(&self.ast)?;
+        if !semantic.errors.is_empty() {
+            return Err(GraphError::PlanError {
+                message: format!("Semantic analysis failed:\n{}", semantic.errors.join("\n")),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            });
+        }
 
         // Phase 2: Graph Logical Plan
         let mut logical_planner = LogicalPlanner::new();
@@ -879,12 +885,23 @@ impl CypherQuery {
         datasets: HashMap<String, arrow::record_batch::RecordBatch>,
     ) -> Result<arrow::record_batch::RecordBatch> {
         use arrow::compute::concat_batches;
+        use crate::semantic::SemanticAnalyzer;
         use datafusion::datasource::MemTable;
         use datafusion::prelude::*;
         use std::sync::Arc;
 
         // Require a config for now, even if we don't fully exploit it yet
-        let _config = self.require_config()?;
+        let config = self.require_config()?.clone();
+
+        // Ensure we don't silently ignore unsupported features (e.g. scalar functions).
+        let mut analyzer = SemanticAnalyzer::new(config);
+        let semantic = analyzer.analyze(&self.ast)?;
+        if !semantic.errors.is_empty() {
+            return Err(GraphError::PlanError {
+                message: format!("Semantic analysis failed:\n{}", semantic.errors.join("\n")),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            });
+        }
 
         if datasets.is_empty() {
             return Err(GraphError::PlanError {
@@ -2248,5 +2265,41 @@ mod tests {
             matches!(err, GraphError::UnsupportedFeature { .. }),
             "expected unsupported feature error, got {err:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_execute_fails_on_semantic_error() {
+        use arrow_array::RecordBatch;
+        use arrow_schema::{DataType, Field, Schema};
+        use std::sync::Arc;
+        use std::collections::HashMap;
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+        ]));
+        let batch = RecordBatch::new_empty(schema);
+        let mut datasets = HashMap::new();
+        datasets.insert("Person".to_string(), batch);
+
+        let cfg = GraphConfig::builder()
+            .with_node_label("Person", "id")
+            .build()
+            .unwrap();
+
+        // Query referencing undefined variable 'x'
+        let query = CypherQuery::new("MATCH (n:Person) RETURN x.name")
+            .unwrap()
+            .with_config(cfg);
+
+        let result = query.execute_simple(datasets).await;
+
+        assert!(result.is_err());
+        match result {
+            Err(GraphError::PlanError { message, .. }) => {
+                assert!(message.contains("Semantic analysis failed"));
+                assert!(message.contains("Undefined variable: 'x'"));
+            }
+            _ => panic!("Expected PlanError with semantic failure message, got {:?}", result),
+        }
     }
 }

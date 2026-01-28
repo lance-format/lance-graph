@@ -53,7 +53,6 @@ pub enum ScopeType {
 /// Semantic analysis result with validated and enriched AST
 #[derive(Debug, Clone)]
 pub struct SemanticResult {
-    pub query: CypherQuery,
     pub variables: HashMap<String, VariableInfo>,
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
@@ -106,6 +105,14 @@ impl SemanticAnalyzer {
             }
         }
 
+        // Phase 4: Variable discovery in post-WITH MATCH clauses (query chaining)
+        self.current_scope = ScopeType::Match;
+        for match_clause in &query.post_with_match_clauses {
+            if let Err(e) = self.analyze_match_clause(match_clause) {
+                errors.push(format!("Post-WITH MATCH clause error: {}", e));
+            }
+        }
+
         // Phase 4: Validate post-WITH WHERE clause if present
         if let Some(post_where) = &query.post_with_where_clause {
             self.current_scope = ScopeType::PostWithWhere;
@@ -135,7 +142,6 @@ impl SemanticAnalyzer {
         self.validate_types(&mut errors);
 
         Ok(SemanticResult {
-            query: query.clone(),
             variables: self.variables.clone(),
             errors,
             warnings,
@@ -343,14 +349,17 @@ impl SemanticAnalyzer {
                 }
             }
             ValueExpression::Function { name, args } => {
+                let function_name = name.to_lowercase();
+
                 // Validate function-specific arity and signature rules
-                match name.to_lowercase().as_str() {
+                match function_name.as_str() {
+                    // Aggregations
                     "count" | "sum" | "avg" | "min" | "max" | "collect" => {
                         if args.len() != 1 {
                             return Err(GraphError::PlanError {
                                 message: format!(
                                     "{} requires exactly 1 argument, got {}",
-                                    name.to_uppercase(),
+                                    function_name.to_uppercase(),
                                     args.len()
                                 ),
                                 location: snafu::Location::new(file!(), line!(), column!()),
@@ -359,25 +368,46 @@ impl SemanticAnalyzer {
 
                         // Additional validation for SUM, AVG, MIN, MAX: they require properties, not bare variables
                         // Only COUNT and COLLECT allow bare variables (COUNT(*), COUNT(p), COLLECT(p))
-                        if matches!(name.to_lowercase().as_str(), "sum" | "avg" | "min" | "max") {
+                        if matches!(function_name.as_str(), "sum" | "avg" | "min" | "max") {
                             if let Some(ValueExpression::Variable(v)) = args.first() {
                                 return Err(GraphError::PlanError {
                                     message: format!(
                                         "{}({}) is invalid - {} requires a property like {}({}.property). You cannot {} a node/entity.",
-                                        name.to_uppercase(), v, name.to_uppercase(), name.to_uppercase(), v, name.to_lowercase()
+                                        function_name.to_uppercase(), v, function_name.to_uppercase(), function_name.to_uppercase(), v, function_name
                                     ),
                                     location: snafu::Location::new(file!(), line!(), column!()),
                                 });
                             }
                         }
                     }
+                    // Scalar string functions
+                    "tolower" | "lower" | "toupper" | "upper" => {
+                        if args.len() != 1 {
+                            return Err(GraphError::PlanError {
+                                message: format!(
+                                    "{} requires exactly 1 argument, got {}",
+                                    function_name.to_uppercase(),
+                                    args.len()
+                                ),
+                                location: snafu::Location::new(file!(), line!(), column!()),
+                            });
+                        }
+                    }
+                    // Unknown/unimplemented scalar function
                     _ => {
-                        // Other functions - no validation yet
+                        return Err(GraphError::UnsupportedFeature {
+                            feature: format!("Cypher function '{}' is not implemented", function_name),
+                            location: snafu::Location::new(file!(), line!(), column!()),
+                        });
                     }
                 }
 
-                // Validate arguments recursively
+                // Validate arguments recursively.
+                // Special-case COUNT(*) where '*' isn't a real variable.
                 for arg in args {
+                    if function_name == "count" && matches!(arg, ValueExpression::Variable(v) if v == "*") {
+                        continue;
+                    }
                     self.analyze_value_expression(arg)?;
                 }
             }
@@ -453,6 +483,21 @@ impl SemanticAnalyzer {
         Ok(())
     }
 
+    fn register_projection_alias(&mut self, alias: &str) {
+        if self.variables.contains_key(alias) {
+            return;
+        }
+
+        let var_info = VariableInfo {
+            name: alias.to_string(),
+            variable_type: VariableType::Property,
+            labels: vec![],
+            properties: HashSet::new(),
+            defined_in: self.current_scope.clone(),
+        };
+        self.variables.insert(alias.to_string(), var_info);
+    }
+
     /// Validate property reference
     fn validate_property_reference(&self, prop_ref: &PropertyRef) -> Result<()> {
         if !self.variables.contains_key(&prop_ref.variable) {
@@ -468,6 +513,9 @@ impl SemanticAnalyzer {
     fn analyze_return_clause(&mut self, return_clause: &ReturnClause) -> Result<()> {
         for item in &return_clause.items {
             self.analyze_value_expression(&item.expression)?;
+            if let Some(alias) = &item.alias {
+                self.register_projection_alias(alias);
+            }
         }
         Ok(())
     }
@@ -477,6 +525,9 @@ impl SemanticAnalyzer {
         // Validate WITH item expressions (similar to RETURN)
         for item in &with_clause.items {
             self.analyze_value_expression(&item.expression)?;
+            if let Some(alias) = &item.alias {
+                self.register_projection_alias(alias);
+            }
         }
         // Validate ORDER BY within WITH if present
         if let Some(order_by) = &with_clause.order_by {
