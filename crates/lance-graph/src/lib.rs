@@ -45,7 +45,6 @@ pub mod logical_plan;
 pub mod namespace;
 pub mod parser;
 pub mod query;
-pub mod query_processor;
 pub mod semantic;
 pub mod simple_executor;
 pub mod source_catalog;
