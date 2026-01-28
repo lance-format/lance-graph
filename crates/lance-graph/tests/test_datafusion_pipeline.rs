@@ -4709,3 +4709,38 @@ async fn test_unwind_then_match() {
 
     assert_eq!(rows, expected);
 }
+
+#[tokio::test]
+async fn test_unwind_string_list() {
+    let config = create_graph_config();
+    // We need at least one dataset to initialize the catalog/context even if not used in query
+    let person_batch = create_person_dataset();
+
+    let query = CypherQuery::new("UNWIND [\"a\", \"b\", \"c\"] AS str RETURN str")
+        .unwrap()
+        .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    assert_eq!(result.num_rows(), 3);
+    assert_eq!(result.num_columns(), 1);
+
+    // Check that we got string values back
+    let col = result.column(0);
+    let string_values = col
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .expect("Expected StringArray");
+
+    let result_values: Vec<String> = (0..result.num_rows())
+        .map(|i| string_values.value(i).to_string())
+        .collect();
+
+    assert_eq!(result_values, vec!["a", "b", "c"]);
+}

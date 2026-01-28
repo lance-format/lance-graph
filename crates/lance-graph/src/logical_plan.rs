@@ -164,15 +164,17 @@ impl LogicalPlanner {
     /// Convert a Cypher AST to a logical plan
     pub fn plan(&mut self, query: &CypherQuery) -> Result<LogicalOperator> {
         // Plan main MATCH clauses
-        let mut plan =
-            self.plan_reading_clauses(None, &query.reading_clauses)?;
+        let mut plan = self.plan_reading_clauses(None, &query.reading_clauses)?;
 
-        // Plan WHERE clause (pre-WITH)
+        // Apply WHERE clause if present (before WITH)
         if let Some(where_clause) = &query.where_clause {
-            plan = self.plan_where_clause(plan, where_clause)?;
+            plan = LogicalOperator::Filter {
+                input: Box::new(plan),
+                predicate: where_clause.expression.clone(),
+            };
         }
 
-        // Plan WITH clause
+        // Apply WITH clause if present (intermediate projection/aggregation)
         if let Some(with_clause) = &query.with_clause {
             plan = self.plan_with_clause(with_clause, plan)?;
         }
@@ -233,9 +235,9 @@ impl LogicalPlanner {
         reading_clauses: &[ReadingClause],
     ) -> Result<LogicalOperator> {
         let mut plan = base_plan;
-        
+
         if reading_clauses.is_empty() && plan.is_none() {
-             return Err(GraphError::PlanError {
+            return Err(GraphError::PlanError {
                 message: "Query must have at least one MATCH or UNWIND clause".to_string(),
                 location: snafu::Location::new(file!(), line!(), column!()),
             });
@@ -267,8 +269,6 @@ impl LogicalPlanner {
         }
     }
 
-
-
     /// Plan an UNWIND clause
     fn plan_unwind_clause_with_base(
         &mut self,
@@ -276,24 +276,13 @@ impl LogicalPlanner {
         unwind_clause: &UnwindClause,
     ) -> Result<LogicalOperator> {
         // Register the alias variable
-        self.variables.insert(unwind_clause.alias.clone(), "Unwound".to_string());
+        self.variables
+            .insert(unwind_clause.alias.clone(), "Unwound".to_string());
 
         Ok(LogicalOperator::Unwind {
             input: base.map(Box::new),
             expression: unwind_clause.expression.clone(),
             alias: unwind_clause.alias.clone(),
-        })
-    }
-
-    /// Plan a WHERE clause
-    fn plan_where_clause(
-        &mut self,
-        input: LogicalOperator,
-        where_clause: &WhereClause,
-    ) -> Result<LogicalOperator> {
-        Ok(LogicalOperator::Filter {
-            input: Box::new(input),
-            predicate: where_clause.expression.clone(),
         })
     }
 
