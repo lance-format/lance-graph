@@ -610,7 +610,7 @@ mod tests {
     use crate::ast::{
         ArithmeticOperator, BooleanExpression, CypherQuery, GraphPattern, LengthRange, MatchClause,
         NodePattern, PathPattern, PathSegment, PropertyRef, PropertyValue, RelationshipDirection,
-        RelationshipPattern, ReturnClause, ReturnItem, UnwindClause, ValueExpression, WhereClause,
+        RelationshipPattern, ReturnClause, ReturnItem, ValueExpression, WhereClause,
     };
     use crate::config::{GraphConfig, NodeMapping};
 

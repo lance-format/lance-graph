@@ -1257,7 +1257,7 @@ impl CypherQuery {
             }
         }
 
-        let exec = PathExecutor::new(ctx, cfg, &path)?;
+        let exec = PathExecutor::new(ctx, cfg, path)?;
         let df = exec.build_chain().await?;
         let df = exec.apply_where(df, &self.ast)?;
         let df = exec.apply_return(df, &self.ast)?;
