@@ -85,6 +85,12 @@ impl DataFusionPlanner {
                 Self::collect_variables(left, vars);
                 Self::collect_variables(right, vars);
             }
+            LogicalOperator::Unwind { input, alias, .. } => {
+                if let Some(op) = input {
+                    Self::collect_variables(op, vars);
+                }
+                vars.push(alias.clone());
+            }
         }
     }
 }

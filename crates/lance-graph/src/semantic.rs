@@ -73,11 +73,20 @@ impl SemanticAnalyzer {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
 
-        // Phase 1: Variable discovery in MATCH clauses
+        // Phase 1: Variable discovery in READING clauses (MATCH/UNWIND)
         self.current_scope = ScopeType::Match;
-        for match_clause in &query.match_clauses {
-            if let Err(e) = self.analyze_match_clause(match_clause) {
-                errors.push(format!("MATCH clause error: {}", e));
+        for clause in &query.reading_clauses {
+            match clause {
+                ReadingClause::Match(match_clause) => {
+                    if let Err(e) = self.analyze_match_clause(match_clause) {
+                        errors.push(format!("MATCH clause error: {}", e));
+                    }
+                }
+                ReadingClause::Unwind(unwind_clause) => {
+                    if let Err(e) = self.analyze_unwind_clause(unwind_clause) {
+                        errors.push(format!("UNWIND clause error: {}", e));
+                    }
+                }
             }
         }
 
@@ -137,6 +146,35 @@ impl SemanticAnalyzer {
     fn analyze_match_clause(&mut self, match_clause: &MatchClause) -> Result<()> {
         for pattern in &match_clause.patterns {
             self.analyze_graph_pattern(pattern)?;
+        }
+        Ok(())
+    }
+
+    /// Analyze UNWIND clause and register variables
+    fn analyze_unwind_clause(&mut self, unwind_clause: &UnwindClause) -> Result<()> {
+        self.analyze_value_expression(&unwind_clause.expression)?;
+        
+        // Register the aliased variable
+        let var_name = &unwind_clause.alias;
+        if let Some(existing) = self.variables.get_mut(var_name) {
+            // Shadowing or redefinition - in Cypher variables can be bound multiple times in some contexts
+            // But here we enforce uniqueness of types mostly. 
+            // For now, treat UNWIND alias as a Property type variable.
+            if existing.variable_type != VariableType::Property {
+                 return Err(GraphError::PlanError {
+                     message: format!("Variable '{}' redefined with different type", var_name),
+                     location: snafu::Location::new(file!(), line!(), column!()),
+                 });
+            }
+        } else {
+            let var_info = VariableInfo {
+                name: var_name.clone(),
+                variable_type: VariableType::Property, 
+                labels: vec![],
+                properties: HashSet::new(),
+                defined_in: self.current_scope.clone(),
+            };
+            self.variables.insert(var_name.clone(), var_info);
         }
         Ok(())
     }
@@ -571,8 +609,9 @@ mod tests {
     use super::*;
     use crate::ast::{
         ArithmeticOperator, BooleanExpression, CypherQuery, GraphPattern, LengthRange, MatchClause,
-        NodePattern, PathPattern, PathSegment, PropertyRef, PropertyValue, RelationshipDirection,
-        RelationshipPattern, ReturnClause, ReturnItem, ValueExpression, WhereClause,
+        NodePattern, PathPattern, PathSegment, PropertyRef, PropertyValue,
+        RelationshipDirection, RelationshipPattern, ReturnClause, ReturnItem, UnwindClause,
+        ValueExpression, WhereClause,
     };
     use crate::config::{GraphConfig, NodeMapping};
 
@@ -589,10 +628,10 @@ mod tests {
     // Helper: analyze a query that only has a single RETURN expression
     fn analyze_return_expr(expr: ValueExpression) -> Result<SemanticResult> {
         let query = CypherQuery {
-            match_clauses: vec![],
+            reading_clauses: vec![],
             where_clause: None,
             with_clause: None,
-            post_with_match_clauses: vec![],
+            post_with_reading_clauses: vec![],
             post_with_where_clause: None,
             return_clause: ReturnClause {
                 distinct: false,
@@ -617,12 +656,12 @@ mod tests {
     ) -> Result<SemanticResult> {
         let node = NodePattern::new(Some(var.to_string())).with_label(label);
         let query = CypherQuery {
-            match_clauses: vec![MatchClause {
+            reading_clauses: vec![ReadingClause::Match(MatchClause {
                 patterns: vec![GraphPattern::Node(node)],
-            }],
+            })],
             where_clause: None,
             with_clause: None,
-            post_with_match_clauses: vec![],
+            post_with_reading_clauses: vec![],
             post_with_where_clause: None,
             return_clause: ReturnClause {
                 distinct: false,
@@ -650,12 +689,12 @@ mod tests {
             .with_property("dept", PropertyValue::String("X".to_string()));
 
         let query = CypherQuery {
-            match_clauses: vec![MatchClause {
+            reading_clauses: vec![ReadingClause::Match(MatchClause {
                 patterns: vec![GraphPattern::Node(node1), GraphPattern::Node(node2)],
-            }],
+            })],
             where_clause: None,
             with_clause: None,
-            post_with_match_clauses: vec![],
+            post_with_reading_clauses: vec![],
             post_with_where_clause: None,
             return_clause: ReturnClause {
                 distinct: false,
@@ -699,12 +738,12 @@ mod tests {
         };
 
         let query = CypherQuery {
-            match_clauses: vec![MatchClause {
+            reading_clauses: vec![ReadingClause::Match(MatchClause {
                 patterns: vec![GraphPattern::Path(path)],
-            }],
+            })],
             where_clause: None,
             with_clause: None,
-            post_with_match_clauses: vec![],
+            post_with_reading_clauses: vec![],
             post_with_where_clause: None,
             return_clause: ReturnClause {
                 distinct: false,
@@ -731,12 +770,12 @@ mod tests {
             expression: BooleanExpression::Exists(PropertyRef::new("m", "name")),
         };
         let query = CypherQuery {
-            match_clauses: vec![MatchClause {
+            reading_clauses: vec![ReadingClause::Match(MatchClause {
                 patterns: vec![GraphPattern::Node(node)],
-            }],
+            })],
             where_clause: Some(where_clause),
             with_clause: None,
-            post_with_match_clauses: vec![],
+            post_with_reading_clauses: vec![],
             post_with_where_clause: None,
             return_clause: ReturnClause {
                 distinct: false,
@@ -773,12 +812,12 @@ mod tests {
         };
 
         let query = CypherQuery {
-            match_clauses: vec![MatchClause {
+            reading_clauses: vec![ReadingClause::Match(MatchClause {
                 patterns: vec![GraphPattern::Path(path)],
-            }],
+            })],
             where_clause: None,
             with_clause: None,
-            post_with_match_clauses: vec![],
+            post_with_reading_clauses: vec![],
             post_with_where_clause: None,
             return_clause: ReturnClause {
                 distinct: false,
@@ -802,13 +841,13 @@ mod tests {
         // MATCH (x:Unknown)
         let node = NodePattern::new(Some("x".to_string())).with_label("Unknown");
         let query = CypherQuery {
-            match_clauses: vec![MatchClause {
+            reading_clauses: vec![ReadingClause::Match(MatchClause {
                 patterns: vec![GraphPattern::Node(node)],
-            }],
+            })],
+            post_with_reading_clauses: vec![],
+            post_with_where_clause: None,
             where_clause: None,
             with_clause: None,
-            post_with_match_clauses: vec![],
-            post_with_where_clause: None,
             return_clause: ReturnClause {
                 distinct: false,
                 items: vec![],
@@ -842,13 +881,13 @@ mod tests {
             .with_label("Person")
             .with_property("age", PropertyValue::Integer(30));
         let query = CypherQuery {
-            match_clauses: vec![MatchClause {
+            reading_clauses: vec![ReadingClause::Match(MatchClause {
                 patterns: vec![GraphPattern::Node(node)],
-            }],
+            })],
+            post_with_reading_clauses: vec![],
+            post_with_where_clause: None,
             where_clause: None,
             with_clause: None,
-            post_with_match_clauses: vec![],
-            post_with_where_clause: None,
             return_clause: ReturnClause {
                 distinct: false,
                 items: vec![],
@@ -887,13 +926,13 @@ mod tests {
         };
 
         let query = CypherQuery {
-            match_clauses: vec![MatchClause {
+            reading_clauses: vec![ReadingClause::Match(MatchClause {
                 patterns: vec![GraphPattern::Path(path)],
-            }],
+            })],
+            post_with_reading_clauses: vec![],
+            post_with_where_clause: None,
             where_clause: None,
             with_clause: None,
-            post_with_match_clauses: vec![],
-            post_with_where_clause: None,
             return_clause: ReturnClause {
                 distinct: false,
                 items: vec![],
@@ -954,13 +993,13 @@ mod tests {
             .unwrap();
 
         let query = CypherQuery {
-            match_clauses: vec![MatchClause {
+            reading_clauses: vec![ReadingClause::Match(MatchClause {
                 patterns: vec![GraphPattern::Path(path)],
-            }],
+            })],
+            post_with_reading_clauses: vec![],
+            post_with_where_clause: None,
             where_clause: None,
             with_clause: None,
-            post_with_match_clauses: vec![],
-            post_with_where_clause: None,
             return_clause: ReturnClause {
                 distinct: false,
                 items: vec![],

@@ -41,17 +41,17 @@ pub fn parse_cypher_query(input: &str) -> Result<CypherQuery> {
 // Top-level parser for a complete Cypher query
 fn cypher_query(input: &str) -> IResult<&str, CypherQuery> {
     let (input, _) = multispace0(input)?;
-    let (input, match_clauses) = many0(match_clause)(input)?;
+    let (input, reading_clauses) = many0(reading_clause)(input)?;
     let (input, pre_with_where) = opt(where_clause)(input)?;
 
     // Optional WITH clause with optional post-WITH MATCH and WHERE
     let (input, with_result) = opt(with_clause)(input)?;
     // Only try to parse post-WITH clauses if we have a WITH clause
-    let (input, post_with_matches, post_with_where) = match with_result {
+    let (input, post_with_reading_clauses, post_with_where) = match with_result {
         Some(_) => {
-            let (input, matches) = many0(match_clause)(input)?;
+            let (input, readings) = many0(reading_clause)(input)?;
             let (input, where_cl) = opt(where_clause)(input)?;
-            (input, matches, where_cl)
+            (input, readings, where_cl)
         }
         None => (input, vec![], None),
     };
@@ -64,10 +64,10 @@ fn cypher_query(input: &str) -> IResult<&str, CypherQuery> {
     Ok((
         input,
         CypherQuery {
-            match_clauses,
+            reading_clauses,
             where_clause: pre_with_where,
             with_clause: with_result,
-            post_with_match_clauses: post_with_matches,
+            post_with_reading_clauses,
             post_with_where_clause: post_with_where,
             return_clause,
             limit,
@@ -75,6 +75,14 @@ fn cypher_query(input: &str) -> IResult<&str, CypherQuery> {
             skip,
         },
     ))
+}
+
+// Parse a reading clause (MATCH or UNWIND)
+fn reading_clause(input: &str) -> IResult<&str, ReadingClause> {
+    alt((
+        map(match_clause, ReadingClause::Match),
+        map(unwind_clause, ReadingClause::Unwind),
+    ))(input)
 }
 
 // Parse a MATCH clause
@@ -85,6 +93,26 @@ fn match_clause(input: &str) -> IResult<&str, MatchClause> {
     let (input, patterns) = separated_list0(comma_ws, graph_pattern)(input)?;
 
     Ok((input, MatchClause { patterns }))
+}
+
+// Parse an UNWIND clause
+fn unwind_clause(input: &str) -> IResult<&str, UnwindClause> {
+    let (input, _) = multispace0(input)?;
+    let (input, _) = tag_no_case("UNWIND")(input)?;
+    let (input, _) = multispace1(input)?;
+    let (input, expression) = value_expression(input)?;
+    let (input, _) = multispace1(input)?;
+    let (input, _) = tag_no_case("AS")(input)?;
+    let (input, _) = multispace1(input)?;
+    let (input, alias) = identifier(input)?;
+
+    Ok((
+        input,
+        UnwindClause {
+            expression,
+            alias: alias.to_string(),
+        },
+    ))
 }
 
 // Parse a graph pattern (node or path)
@@ -967,7 +995,7 @@ mod tests {
         let query = "MATCH (n:Person) RETURN n.name";
         let result = parse_cypher_query(query).unwrap();
 
-        assert_eq!(result.match_clauses.len(), 1);
+        assert_eq!(result.reading_clauses.len(), 1);
         assert_eq!(result.return_clause.items.len(), 1);
     }
 
@@ -976,11 +1004,15 @@ mod tests {
         let query = r#"MATCH (n:Person {name: "John", age: 30}) RETURN n"#;
         let result = parse_cypher_query(query).unwrap();
 
-        if let GraphPattern::Node(node) = &result.match_clauses[0].patterns[0] {
-            assert_eq!(node.labels, vec!["Person"]);
-            assert_eq!(node.properties.len(), 2);
+        if let ReadingClause::Match(match_clause) = &result.reading_clauses[0] {
+            if let GraphPattern::Node(node) = &match_clause.patterns[0] {
+                assert_eq!(node.labels, vec!["Person"]);
+                assert_eq!(node.properties.len(), 2);
+            } else {
+                panic!("Expected node pattern");
+            }
         } else {
-            panic!("Expected node pattern");
+            panic!("Expected match clause");
         }
     }
 
@@ -989,14 +1021,18 @@ mod tests {
         let query = "MATCH (a:Person)-[r:KNOWS]->(b:Person) RETURN a.name, b.name";
         let result = parse_cypher_query(query).unwrap();
 
-        assert_eq!(result.match_clauses.len(), 1);
+        assert_eq!(result.reading_clauses.len(), 1);
         assert_eq!(result.return_clause.items.len(), 2);
 
-        if let GraphPattern::Path(path) = &result.match_clauses[0].patterns[0] {
-            assert_eq!(path.segments.len(), 1);
-            assert_eq!(path.segments[0].relationship.types, vec!["KNOWS"]);
+        if let ReadingClause::Match(match_clause) = &result.reading_clauses[0] {
+            if let GraphPattern::Path(path) = &match_clause.patterns[0] {
+                assert_eq!(path.segments.len(), 1);
+                assert_eq!(path.segments[0].relationship.types, vec!["KNOWS"]);
+            } else {
+                panic!("Expected path pattern");
+            }
         } else {
-            panic!("Expected path pattern");
+            panic!("Expected match clause");
         }
     }
 
@@ -1005,17 +1041,21 @@ mod tests {
         let query = "MATCH (a:Person)-[:FRIEND_OF*1..2]-(b:Person) RETURN a.name, b.name";
         let result = parse_cypher_query(query).unwrap();
 
-        assert_eq!(result.match_clauses.len(), 1);
+        assert_eq!(result.reading_clauses.len(), 1);
 
-        if let GraphPattern::Path(path) = &result.match_clauses[0].patterns[0] {
-            assert_eq!(path.segments.len(), 1);
-            assert_eq!(path.segments[0].relationship.types, vec!["FRIEND_OF"]);
+        if let ReadingClause::Match(match_clause) = &result.reading_clauses[0] {
+            if let GraphPattern::Path(path) = &match_clause.patterns[0] {
+                assert_eq!(path.segments.len(), 1);
+                assert_eq!(path.segments[0].relationship.types, vec!["FRIEND_OF"]);
 
-            let length = path.segments[0].relationship.length.as_ref().unwrap();
-            assert_eq!(length.min, Some(1));
-            assert_eq!(length.max, Some(2));
+                let length = path.segments[0].relationship.length.as_ref().unwrap();
+                assert_eq!(length.min, Some(1));
+                assert_eq!(length.max, Some(2));
+            } else {
+                panic!("Expected path pattern");
+            }
         } else {
-            panic!("Expected path pattern");
+            panic!("Expected match clause");
         }
     }
 

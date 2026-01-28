@@ -13,14 +13,14 @@ use std::collections::HashMap;
 /// A complete Cypher query
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CypherQuery {
-    /// MATCH clauses
-    pub match_clauses: Vec<MatchClause>,
+    /// READING clauses (MATCH, UNWIND, etc.)
+    pub reading_clauses: Vec<ReadingClause>,
     /// WHERE clause (optional, before WITH if present)
     pub where_clause: Option<WhereClause>,
     /// WITH clause (optional) - intermediate projection/aggregation
     pub with_clause: Option<WithClause>,
-    /// MATCH clauses after WITH (optional) - query chaining
-    pub post_with_match_clauses: Vec<MatchClause>,
+    /// Post-WITH READING clauses
+    pub post_with_reading_clauses: Vec<ReadingClause>,
     /// WHERE clause after WITH (optional) - filters the WITH results
     pub post_with_where_clause: Option<WhereClause>,
     /// RETURN clause
@@ -37,8 +37,10 @@ impl CypherQuery {
     /// Extract all node labels referenced in the query
     pub fn get_node_labels(&self) -> Vec<String> {
         let mut labels = Vec::new();
-        for match_clause in &self.match_clauses {
-            for pattern in &match_clause.patterns {
+        // Iterate all match clauses directly
+        for clause in &self.reading_clauses {
+            if let ReadingClause::Match(match_clause) = clause {
+                for pattern in &match_clause.patterns {
                 match pattern {
                     GraphPattern::Node(node) => {
                         for label in &node.labels {
@@ -63,6 +65,7 @@ impl CypherQuery {
                     }
                 }
             }
+            }
         }
         labels
     }
@@ -70,21 +73,36 @@ impl CypherQuery {
     /// Extract all relationship types referenced in the query
     pub fn get_relationship_types(&self) -> Vec<String> {
         let mut types = Vec::new();
-        for match_clause in &self.match_clauses {
-            for pattern in &match_clause.patterns {
-                if let GraphPattern::Path(path) = pattern {
-                    for segment in &path.segments {
-                        for rel_type in &segment.relationship.types {
-                            if !types.contains(rel_type) {
-                                types.push(rel_type.clone());
-                            }
-                        }
-                    }
+        for clause in &self.reading_clauses {
+            if let ReadingClause::Match(match_clause) = clause {
+                for pattern in &match_clause.patterns {
+                    self.collect_relationship_types_from_pattern(pattern, &mut types);
                 }
             }
         }
         types
     }
+
+
+    fn collect_relationship_types_from_pattern(&self, pattern: &GraphPattern, types: &mut Vec<String>) {
+        if let GraphPattern::Path(path) = pattern {
+            for segment in &path.segments {
+                for rel_type in &segment.relationship.types {
+                    if !types.contains(rel_type) {
+                        types.push(rel_type.clone());
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+/// A clause that reads from the graph (MATCH, UNWIND)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ReadingClause {
+    Match(MatchClause),
+    Unwind(UnwindClause),
 }
 
 /// A MATCH clause containing graph patterns
@@ -92,6 +110,15 @@ impl CypherQuery {
 pub struct MatchClause {
     /// Graph patterns to match
     pub patterns: Vec<GraphPattern>,
+}
+
+/// An UNWIND clause
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UnwindClause {
+    /// Expression to unwind
+    pub expression: ValueExpression,
+    /// Alias for the unwound values
+    pub alias: String,
 }
 
 /// A graph pattern (nodes and relationships)

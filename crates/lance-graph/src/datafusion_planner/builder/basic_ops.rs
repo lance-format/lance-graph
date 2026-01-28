@@ -141,6 +141,46 @@ impl DataFusionPlanner {
             .build()
             .map_err(|e| self.plan_error("Failed to build plan", e))
     }
+
+
+    pub(crate) fn build_unwind(
+        &self,
+        ctx: &mut PlanningContext,
+        input: &Option<Box<LogicalOperator>>,
+        expression: &crate::ast::ValueExpression,
+        alias: &str,
+    ) -> Result<LogicalPlan> {
+        let input_plan = if let Some(input_op) = input {
+            self.build_operator(ctx, input_op)?
+        } else {
+            // Create an empty relation that produces one row for UNWIND [..]
+            LogicalPlanBuilder::empty(true)
+                .build()
+                .map_err(|e| self.plan_error("Failed to create empty relation", e))?
+        };
+
+        // Convert expression to DataFusion Expr
+        let df_expr = super::super::expression::to_df_value_expr(expression);
+
+        // We project the list expression first (aliased as the target alias temporarily)
+        // DataFusion unnest takes a column name.
+        let builder = LogicalPlanBuilder::from(input_plan);
+
+        let builder = builder
+            .project(vec![
+                datafusion::logical_expr::wildcard(),
+                datafusion::logical_expr::select_expr::SelectExpr::Expression(df_expr.alias(alias)),
+            ])
+            .map_err(|e| self.plan_error("Failed to project unwind expression", e))?;
+
+        let builder = builder
+            .unnest_column(alias)
+            .map_err(|e| self.plan_error("Failed to build unnest", e))?;
+
+        builder
+            .build()
+            .map_err(|e| self.plan_error("Failed to build unwind plan", e))
+    }
 }
 
 #[cfg(test)]

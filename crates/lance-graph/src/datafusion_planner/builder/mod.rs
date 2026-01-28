@@ -96,6 +96,11 @@ impl DataFusionPlanner {
                 right,
                 join_type,
             } => self.build_join(ctx, left, right, join_type),
+            LogicalOperator::Unwind {
+                input,
+                expression,
+                alias,
+            } => self.build_unwind(ctx, input, expression, alias),
         }
     }
 }

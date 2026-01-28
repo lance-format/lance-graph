@@ -23,6 +23,16 @@ pub enum LogicalOperator {
         properties: HashMap<String, PropertyValue>,
     },
 
+    /// Unwind a list into a sequence of rows
+    Unwind {
+        /// The input operator
+        input: Option<Box<LogicalOperator>>,
+        /// The expression to unwind (must yield a list)
+        expression: ValueExpression,
+        /// The alias for the unwound element
+        alias: String,
+    },
+
     /// Apply a filter predicate (WHERE clause)
     Filter {
         input: Box<LogicalOperator>,
@@ -153,25 +163,23 @@ impl LogicalPlanner {
 
     /// Convert a Cypher AST to a logical plan
     pub fn plan(&mut self, query: &CypherQuery) -> Result<LogicalOperator> {
-        // Start with the MATCH clause(s)
-        let mut plan = self.plan_match_clauses(&query.match_clauses)?;
+        // Plan main MATCH clauses
+        let mut plan =
+            self.plan_reading_clauses(None, &query.reading_clauses)?;
 
-        // Apply WHERE clause if present (before WITH)
+        // Plan WHERE clause (pre-WITH)
         if let Some(where_clause) = &query.where_clause {
-            plan = LogicalOperator::Filter {
-                input: Box::new(plan),
-                predicate: where_clause.expression.clone(),
-            };
+            plan = self.plan_where_clause(plan, where_clause)?;
         }
 
-        // Apply WITH clause if present (intermediate projection/aggregation)
+        // Plan WITH clause
         if let Some(with_clause) = &query.with_clause {
             plan = self.plan_with_clause(with_clause, plan)?;
         }
 
-        // Apply post-WITH MATCH clauses if present (query chaining)
-        for match_clause in &query.post_with_match_clauses {
-            plan = self.plan_match_clause_with_base(Some(plan), match_clause)?;
+        // Plan post-WITH MATCH clauses
+        if !query.post_with_reading_clauses.is_empty() {
+            plan = self.plan_reading_clauses(Some(plan), &query.post_with_reading_clauses)?;
         }
 
         // Apply post-WITH WHERE clause if present
@@ -219,22 +227,73 @@ impl LogicalPlanner {
         Ok(plan)
     }
 
-    /// Plan MATCH clauses - the core graph pattern matching
-    fn plan_match_clauses(&mut self, match_clauses: &[MatchClause]) -> Result<LogicalOperator> {
-        if match_clauses.is_empty() {
-            return Err(GraphError::PlanError {
-                message: "Query must have at least one MATCH clause".to_string(),
+    fn plan_reading_clauses(
+        &mut self,
+        base_plan: Option<LogicalOperator>,
+        reading_clauses: &[ReadingClause],
+    ) -> Result<LogicalOperator> {
+        let mut plan = base_plan;
+        
+        if reading_clauses.is_empty() && plan.is_none() {
+             return Err(GraphError::PlanError {
+                message: "Query must have at least one MATCH or UNWIND clause".to_string(),
                 location: snafu::Location::new(file!(), line!(), column!()),
             });
         }
 
-        let plan = match_clauses.iter().try_fold(None, |plan, clause| {
-            self.plan_match_clause_with_base(plan, clause).map(Some)
-        })?;
+        for clause in reading_clauses {
+            plan = Some(self.plan_reading_clause_with_base(plan, clause)?);
+        }
 
         plan.ok_or_else(|| GraphError::PlanError {
-            message: "Failed to plan MATCH clauses".to_string(),
+            message: "Failed to plan clauses".to_string(),
             location: snafu::Location::new(file!(), line!(), column!()),
+        })
+    }
+
+    /// Plan a single READING clause, optionally starting from an existing base plan
+    fn plan_reading_clause_with_base(
+        &mut self,
+        base: Option<LogicalOperator>,
+        clause: &ReadingClause,
+    ) -> Result<LogicalOperator> {
+        match clause {
+            ReadingClause::Match(match_clause) => {
+                self.plan_match_clause_with_base(base, match_clause)
+            }
+            ReadingClause::Unwind(unwind_clause) => {
+                self.plan_unwind_clause_with_base(base, unwind_clause)
+            }
+        }
+    }
+
+
+
+    /// Plan an UNWIND clause
+    fn plan_unwind_clause_with_base(
+        &mut self,
+        base: Option<LogicalOperator>,
+        unwind_clause: &UnwindClause,
+    ) -> Result<LogicalOperator> {
+        // Register the alias variable
+        self.variables.insert(unwind_clause.alias.clone(), "Unwound".to_string());
+
+        Ok(LogicalOperator::Unwind {
+            input: base.map(Box::new),
+            expression: unwind_clause.expression.clone(),
+            alias: unwind_clause.alias.clone(),
+        })
+    }
+
+    /// Plan a WHERE clause
+    fn plan_where_clause(
+        &mut self,
+        input: LogicalOperator,
+        where_clause: &WhereClause,
+    ) -> Result<LogicalOperator> {
+        Ok(LogicalOperator::Filter {
+            input: Box::new(input),
+            predicate: where_clause.expression.clone(),
         })
     }
 
@@ -398,6 +457,7 @@ impl LogicalPlanner {
     fn extract_variable_from_plan(&self, plan: &LogicalOperator) -> Result<String> {
         match plan {
             LogicalOperator::ScanByLabel { variable, .. } => Ok(variable.clone()),
+            LogicalOperator::Unwind { alias, .. } => Ok(alias.clone()),
             LogicalOperator::Expand {
                 target_variable, ..
             } => Ok(target_variable.clone()),
