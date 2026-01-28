@@ -975,7 +975,14 @@ impl CypherQuery {
             .return_clause
             .items
             .iter()
-            .map(|item| to_df_value_expr_simple(&item.expression))
+            .map(|item| {
+                let expr = to_df_value_expr_simple(&item.expression);
+                if let Some(alias) = &item.alias {
+                    expr.alias(alias)
+                } else {
+                    expr
+                }
+            })
             .collect();
         if !proj_exprs.is_empty() {
             df = df.select(proj_exprs).map_err(|e| GraphError::PlanError {
