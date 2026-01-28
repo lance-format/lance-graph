@@ -884,8 +884,8 @@ impl CypherQuery {
         &self,
         datasets: HashMap<String, arrow::record_batch::RecordBatch>,
     ) -> Result<arrow::record_batch::RecordBatch> {
-        use arrow::compute::concat_batches;
         use crate::semantic::SemanticAnalyzer;
+        use arrow::compute::concat_batches;
         use datafusion::datasource::MemTable;
         use datafusion::prelude::*;
         use std::sync::Arc;
@@ -2271,12 +2271,10 @@ mod tests {
     async fn test_execute_fails_on_semantic_error() {
         use arrow_array::RecordBatch;
         use arrow_schema::{DataType, Field, Schema};
-        use std::sync::Arc;
         use std::collections::HashMap;
+        use std::sync::Arc;
 
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int64, false),
-        ]));
+        let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)]));
         let batch = RecordBatch::new_empty(schema);
         let mut datasets = HashMap::new();
         datasets.insert("Person".to_string(), batch);
@@ -2299,7 +2297,10 @@ mod tests {
                 assert!(message.contains("Semantic analysis failed"));
                 assert!(message.contains("Undefined variable: 'x'"));
             }
-            _ => panic!("Expected PlanError with semantic failure message, got {:?}", result),
+            _ => panic!(
+                "Expected PlanError with semantic failure message, got {:?}",
+                result
+            ),
         }
     }
 }

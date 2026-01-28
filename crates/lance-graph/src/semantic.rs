@@ -396,7 +396,10 @@ impl SemanticAnalyzer {
                     // Unknown/unimplemented scalar function
                     _ => {
                         return Err(GraphError::UnsupportedFeature {
-                            feature: format!("Cypher function '{}' is not implemented", function_name),
+                            feature: format!(
+                                "Cypher function '{}' is not implemented",
+                                function_name
+                            ),
                             location: snafu::Location::new(file!(), line!(), column!()),
                         });
                     }
@@ -405,7 +408,9 @@ impl SemanticAnalyzer {
                 // Validate arguments recursively.
                 // Special-case COUNT(*) where '*' isn't a real variable.
                 for arg in args {
-                    if function_name == "count" && matches!(arg, ValueExpression::Variable(v) if v == "*") {
+                    if function_name == "count"
+                        && matches!(arg, ValueExpression::Variable(v) if v == "*")
+                    {
                         continue;
                     }
                     self.analyze_value_expression(arg)?;
