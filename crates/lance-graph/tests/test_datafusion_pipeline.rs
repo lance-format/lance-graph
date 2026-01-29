@@ -4708,8 +4708,7 @@ async fn test_unwind_then_match() {
             (0..result.num_rows())
                 .map(|i| (names.value(i).to_string(), float_ids.value(i) as i32))
                 .collect()
-        } else if let Some(float_ids) = result.column(1).as_any().downcast_ref::<Float64Array>()
-        {
+        } else if let Some(float_ids) = result.column(1).as_any().downcast_ref::<Float64Array>() {
             (0..result.num_rows())
                 .map(|i| (names.value(i).to_string(), float_ids.value(i) as i32))
                 .collect()
