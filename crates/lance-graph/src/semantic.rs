@@ -1188,6 +1188,37 @@ mod tests {
     }
 
     #[test]
+    fn test_count_star_passes_validation() {
+        // COUNT(*) should be allowed (special-cased in semantic analysis)
+        let expr = ValueExpression::Function {
+            name: "count".to_string(),
+            args: vec![ValueExpression::Variable("*".to_string())],
+        };
+        let result = analyze_return_with_match("n", "Person", expr).unwrap();
+        assert!(
+            result.errors.is_empty(),
+            "Expected COUNT(*) to pass semantic validation, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn test_unimplemented_scalar_function_fails_validation() {
+        let expr = ValueExpression::Function {
+            name: "replace".to_string(),
+            args: vec![ValueExpression::Property(PropertyRef::new("n", "name"))],
+        };
+        let result = analyze_return_with_match("n", "Person", expr).unwrap();
+        assert!(
+            result.errors
+                .iter()
+                .any(|e| e.to_lowercase().contains("not implemented")),
+            "Expected semantic validation to reject unimplemented function, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
     fn test_sum_with_variable_fails_validation() {
         let expr = ValueExpression::Function {
             name: "sum".to_string(),

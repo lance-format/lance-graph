@@ -213,3 +213,45 @@ pub(crate) fn to_df_value_expr_simple(
         VE::VectorLiteral(_) => lit(0.0f32),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ast::{ArithmeticOperator, PropertyRef, ValueExpression};
+    use datafusion::logical_expr::Expr;
+    use datafusion::scalar::ScalarValue;
+
+    #[test]
+    fn test_simple_expr_unknown_function_returns_null() {
+        let expr = ValueExpression::Function {
+            name: "replace".to_string(),
+            args: vec![ValueExpression::Property(PropertyRef::new("p", "name"))],
+        };
+        let df_expr = to_df_value_expr_simple(&expr);
+        assert!(matches!(df_expr, Expr::Literal(ScalarValue::Null, _)));
+    }
+
+    #[test]
+    fn test_simple_expr_lower_wrong_arity_returns_null() {
+        let expr = ValueExpression::Function {
+            name: "lower".to_string(),
+            args: vec![
+                ValueExpression::Property(PropertyRef::new("p", "name")),
+                ValueExpression::Property(PropertyRef::new("p", "name")),
+            ],
+        };
+        let df_expr = to_df_value_expr_simple(&expr);
+        assert!(matches!(df_expr, Expr::Literal(ScalarValue::Null, _)));
+    }
+
+    #[test]
+    fn test_simple_expr_arithmetic_builds_binary_expr() {
+        let expr = ValueExpression::Arithmetic {
+            left: Box::new(ValueExpression::Variable("x".to_string())),
+            operator: ArithmeticOperator::Add,
+            right: Box::new(ValueExpression::Literal(crate::ast::PropertyValue::Integer(1))),
+        };
+        let df_expr = to_df_value_expr_simple(&expr);
+        assert!(matches!(df_expr, Expr::BinaryExpr(_)));
+    }
+}
