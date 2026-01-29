@@ -249,7 +249,9 @@ mod tests {
         let expr = ValueExpression::Arithmetic {
             left: Box::new(ValueExpression::Variable("x".to_string())),
             operator: ArithmeticOperator::Add,
-            right: Box::new(ValueExpression::Literal(crate::ast::PropertyValue::Integer(1))),
+            right: Box::new(ValueExpression::Literal(
+                crate::ast::PropertyValue::Integer(1),
+            )),
         };
         let df_expr = to_df_value_expr_simple(&expr);
         assert!(matches!(df_expr, Expr::BinaryExpr(_)));

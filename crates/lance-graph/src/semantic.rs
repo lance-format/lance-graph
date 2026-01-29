@@ -105,11 +105,20 @@ impl SemanticAnalyzer {
             }
         }
 
-        // Phase 4: Variable discovery in post-WITH MATCH clauses (query chaining)
+        // Phase 4: Variable discovery in post-WITH READING clauses (query chaining)
         self.current_scope = ScopeType::Match;
-        for match_clause in &query.post_with_match_clauses {
-            if let Err(e) = self.analyze_match_clause(match_clause) {
-                errors.push(format!("Post-WITH MATCH clause error: {}", e));
+        for clause in &query.post_with_reading_clauses {
+            match clause {
+                ReadingClause::Match(match_clause) => {
+                    if let Err(e) = self.analyze_match_clause(match_clause) {
+                        errors.push(format!("Post-WITH MATCH clause error: {}", e));
+                    }
+                }
+                ReadingClause::Unwind(unwind_clause) => {
+                    if let Err(e) = self.analyze_unwind_clause(unwind_clause) {
+                        errors.push(format!("Post-WITH UNWIND clause error: {}", e));
+                    }
+                }
             }
         }
 
@@ -1210,7 +1219,8 @@ mod tests {
         };
         let result = analyze_return_with_match("n", "Person", expr).unwrap();
         assert!(
-            result.errors
+            result
+                .errors
                 .iter()
                 .any(|e| e.to_lowercase().contains("not implemented")),
             "Expected semantic validation to reject unimplemented function, got: {:?}",
