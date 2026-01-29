@@ -4510,13 +4510,6 @@ async fn test_with_post_match_chaining() {
 // ============================================================================
 // UNWIND Tests
 // ============================================================================
-    use lance_graph::parser::parse_cypher_query;
-    let query = "MATCH (n) UNWIND n.list AS item RETURN item";
-    let ast = parse_cypher_query(query);
-    assert!(ast.is_ok(), "Failed to parse UNWIND after MATCH");
-}
-
-// Execution Tests
 
 #[tokio::test]
 async fn test_unwind_simple_list() {
