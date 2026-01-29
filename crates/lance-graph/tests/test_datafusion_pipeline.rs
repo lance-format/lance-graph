@@ -4542,3 +4542,187 @@ async fn test_unimplemented_scalar_function_errors() {
 }
 
 // NOTE: Simple executor tests live in `tests/test_simple_executor_pipeline.rs`.
+
+// ============================================================================
+// UNWIND Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_unwind_simple_list() {
+    let config = create_graph_config();
+    // We need at least one dataset to initialize the catalog/context even if not used in query
+    let person_batch = create_person_dataset();
+
+    let query = CypherQuery::new("UNWIND [1, 2, 3] AS x RETURN x")
+        .unwrap()
+        .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    assert_eq!(result.num_rows(), 3);
+    assert_eq!(result.num_columns(), 1);
+
+    // Check the column type - UNWIND returns different types based on implementation
+    let col = result.column(0);
+    let data_type = col.data_type();
+
+    // Try to get values as Int64, Float32, or Float64
+    if let Some(int_values) = col.as_any().downcast_ref::<Int64Array>() {
+        let result_values: Vec<i64> = (0..result.num_rows())
+            .map(|i| int_values.value(i))
+            .collect();
+        assert_eq!(result_values, vec![1, 2, 3]);
+    } else if let Some(float_values) = col.as_any().downcast_ref::<arrow_array::Float32Array>() {
+        let result_values: Vec<f32> = (0..result.num_rows())
+            .map(|i| float_values.value(i))
+            .collect();
+        assert_eq!(result_values, vec![1.0, 2.0, 3.0]);
+    } else if let Some(float_values) = col.as_any().downcast_ref::<Float64Array>() {
+        let result_values: Vec<f64> = (0..result.num_rows())
+            .map(|i| float_values.value(i))
+            .collect();
+        assert_eq!(result_values, vec![1.0, 2.0, 3.0]);
+    } else {
+        panic!("Unexpected column type: {:?}", data_type);
+    }
+}
+
+#[tokio::test]
+async fn test_unwind_after_match() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    // Alice, Bob
+    // UNWIND [10, 20] -> Cartesian product: (Alice, 10), (Alice, 20), (Bob, 10), (Bob, 20)
+    let query = CypherQuery::new("MATCH (p:Person) UNWIND [10, 20] AS x RETURN p.name, x")
+        .unwrap()
+        .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    assert_eq!(result.num_rows(), 10); // 5 people * 2 values = 10 rows
+    assert_eq!(result.num_columns(), 2);
+
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    // Try Int64, Float32, or Float64 for the unwound values
+    let mut rows: Vec<(String, i32)> = if let Some(int_values) =
+        result.column(1).as_any().downcast_ref::<Int64Array>()
+    {
+        (0..result.num_rows())
+            .map(|i| (names.value(i).to_string(), int_values.value(i) as i32))
+            .collect()
+    } else if let Some(float_values) = result
+        .column(1)
+        .as_any()
+        .downcast_ref::<arrow_array::Float32Array>()
+    {
+        (0..result.num_rows())
+            .map(|i| (names.value(i).to_string(), float_values.value(i) as i32))
+            .collect()
+    } else if let Some(float_values) = result.column(1).as_any().downcast_ref::<Float64Array>() {
+        (0..result.num_rows())
+            .map(|i| (names.value(i).to_string(), float_values.value(i) as i32))
+            .collect()
+    } else {
+        panic!(
+            "Unexpected column type for unwound values: {:?}",
+            result.column(1).data_type()
+        );
+    };
+
+    rows.sort();
+
+    let expected = vec![
+        ("Alice".to_string(), 10),
+        ("Alice".to_string(), 20),
+        ("Bob".to_string(), 10),
+        ("Bob".to_string(), 20),
+        ("Charlie".to_string(), 10),
+        ("Charlie".to_string(), 20),
+        ("David".to_string(), 10),
+        ("David".to_string(), 20),
+        ("Eve".to_string(), 10),
+        ("Eve".to_string(), 20),
+    ];
+
+    assert_eq!(rows, expected);
+}
+
+#[tokio::test]
+async fn test_unwind_then_match() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    // UNWIND [1, 2] usually yields Float64Array in current parser/planner pipeline
+    // p.id is Int64
+    // We expect DataFusion to handle comparison (maybe with cast)
+    let query = CypherQuery::new("UNWIND [1, 2] AS target_id MATCH (p:Person) WHERE p.id = target_id RETURN p.name, target_id")
+        .unwrap()
+        .with_config(config);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // We expect 2 matches: Alice (id=1) and Bob (id=2)
+    assert_eq!(result.num_rows(), 2);
+
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+
+    // target_id from Unwind might be Int64, Float32, or Float64
+    let mut rows: Vec<(String, i32)> =
+        if let Some(int_ids) = result.column(1).as_any().downcast_ref::<Int64Array>() {
+            (0..result.num_rows())
+                .map(|i| (names.value(i).to_string(), int_ids.value(i) as i32))
+                .collect()
+        } else if let Some(float_ids) = result
+            .column(1)
+            .as_any()
+            .downcast_ref::<arrow_array::Float32Array>()
+        {
+            (0..result.num_rows())
+                .map(|i| (names.value(i).to_string(), float_ids.value(i) as i32))
+                .collect()
+        } else if let Some(float_ids) = result.column(1).as_any().downcast_ref::<Float64Array>()
+        {
+            (0..result.num_rows())
+                .map(|i| (names.value(i).to_string(), float_ids.value(i) as i32))
+                .collect()
+        } else {
+            panic!(
+                "Unexpected column type for target_id: {:?}",
+                result.column(1).data_type()
+            );
+        };
+
+    rows.sort();
+
+    let expected = vec![("Alice".to_string(), 1), ("Bob".to_string(), 2)];
+
+    assert_eq!(rows, expected);
+}
