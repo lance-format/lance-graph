@@ -23,26 +23,29 @@ pip install lance-graph
 import pyarrow as pa
 from lance_graph import CypherQuery, GraphConfig
 
-# Create sample data
-people = pa.table({
-    "person_id": [1, 2, 3, 4],
-    "name": ["Alice", "Bob", "Carol", "David"],
-    "age": [28, 34, 29, 42],
-})
-
-# Configure graph schema
-config = (
+cfg = (
     GraphConfig.builder()
-    .with_node_label("Person", "person_id")
+    .with_node_label("Person", "id")
+    .with_node_label("City", "id")
+    .with_relationship("lives_in", "src", "dst")
     .build()
 )
 
-# Execute Cypher query
-query = CypherQuery("MATCH (p:Person) WHERE p.age > 30 RETURN p.name, p.age")
-result = query.with_config(config).execute({"Person": people})
+datasets = {
+    "Person": pa.table({"id": [1, 2], "name": ["Alice", "Bob"]}),
+    "City": pa.table({"id": [10, 20], "name": ["London", "Sydney"]}),
+    "lives_in": pa.table({"src": [1, 2], "dst": [10, 20]}),
+}
 
-print(result.to_pydict())
-# Output: {'name': ['Bob', 'David'], 'age': [34, 42]}
+query = """
+    MATCH (p:Person)-[:lives_in]->(c:City)
+    RETURN p.name, c.name
+"""
+
+result = CypherQuery(query).with_config(cfg).execute(datasets)
+print(result.to_pylist())
+
+[{'p.name': 'Alice', 'c.name': 'London'}, {'p.name': 'Bob', 'c.name': 'Sydney'}]
 ```
 
 ### 2. Build a Knowledge Graph from Text
