@@ -693,7 +693,8 @@ impl CypherQuery {
                     location: snafu::Location::new(file!(), line!(), column!()),
                 })?;
 
-            providers.insert(table_name, provider);
+            // Store provider with normalized (lowercase) key for consistent lookup
+            providers.insert(normalized_table_name.clone(), provider);
         }
 
         for label in config.node_mappings.keys() {
