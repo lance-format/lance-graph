@@ -40,7 +40,8 @@ impl DataFusionPlanner {
         };
 
         let rel_instance = ctx.next_relationship_instance(rel_type)?;
-        let Some(rel_map) = self.config.relationship_mappings.get(rel_type) else {
+        // Use case-insensitive lookups
+        let Some(rel_map) = self.config.get_relationship_mapping(rel_type) else {
             return Ok(left_plan);
         };
 
@@ -48,7 +49,7 @@ impl DataFusionPlanner {
             return Ok(left_plan);
         };
 
-        let Some(node_map) = self.config.node_mappings.get(src_label) else {
+        let Some(node_map) = self.config.get_node_mapping(src_label) else {
             return Ok(left_plan);
         };
 
@@ -70,8 +71,8 @@ impl DataFusionPlanner {
         };
         let builder = self.join_source_to_relationship(left_plan, rel_scan, &source_params)?;
 
-        // Join relationship with target node using the explicit target_label
-        let target_node_map = self.config.node_mappings.get(target_label).ok_or_else(|| {
+        // Join relationship with target node using the explicit target_label (case-insensitive)
+        let target_node_map = self.config.get_node_mapping(target_label).ok_or_else(|| {
             crate::error::GraphError::ConfigError {
                 message: format!("No mapping found for target label: {}", target_label),
                 location: snafu::Location::new(file!(), line!(), column!()),

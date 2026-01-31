@@ -35,7 +35,9 @@ impl InMemoryCatalog {
         label: impl Into<String>,
         source: Arc<dyn TableSource>,
     ) -> Self {
-        self.node_sources.insert(label.into(), source);
+        // Normalize key to lowercase for case-insensitive lookup
+        self.node_sources
+            .insert(label.into().to_lowercase(), source);
         self
     }
 
@@ -44,7 +46,9 @@ impl InMemoryCatalog {
         rel_type: impl Into<String>,
         source: Arc<dyn TableSource>,
     ) -> Self {
-        self.rel_sources.insert(rel_type.into(), source);
+        // Normalize key to lowercase for case-insensitive lookup
+        self.rel_sources
+            .insert(rel_type.into().to_lowercase(), source);
         self
     }
 }
@@ -56,12 +60,18 @@ impl Default for InMemoryCatalog {
 }
 
 impl GraphSourceCatalog for InMemoryCatalog {
+    /// Get node source with case-insensitive label lookup
+    ///
+    /// Note: Keys are stored as lowercase, so this is an O(1) operation.
     fn node_source(&self, label: &str) -> Option<Arc<dyn TableSource>> {
-        self.node_sources.get(label).cloned()
+        self.node_sources.get(&label.to_lowercase()).cloned()
     }
 
+    /// Get relationship source with case-insensitive type lookup
+    ///
+    /// Note: Keys are stored as lowercase, so this is an O(1) operation.
     fn relationship_source(&self, rel_type: &str) -> Option<Arc<dyn TableSource>> {
-        self.rel_sources.get(rel_type).cloned()
+        self.rel_sources.get(&rel_type.to_lowercase()).cloned()
     }
 }
 

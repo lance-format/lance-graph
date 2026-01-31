@@ -13,8 +13,44 @@ use crate::parser::parse_cypher_query;
 use crate::simple_executor::{
     to_df_boolean_expr_simple, to_df_order_by_expr_simple, to_df_value_expr_simple, PathExecutor,
 };
+use arrow_array::RecordBatch;
+use arrow_schema::{Field, Schema, SchemaRef};
 use lance_namespace::models::DescribeTableRequest;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+/// Normalize an Arrow schema to have lowercase field names.
+///
+/// This ensures that column names in the dataset match the normalized
+/// qualified column names used internally (e.g., "fullName" becomes "fullname").
+fn normalize_schema(schema: SchemaRef) -> Result<SchemaRef> {
+    let fields: Vec<_> = schema
+        .fields()
+        .iter()
+        .map(|f| {
+            Arc::new(Field::new(
+                f.name().to_lowercase(),
+                f.data_type().clone(),
+                f.is_nullable(),
+            ))
+        })
+        .collect();
+    Ok(Arc::new(Schema::new(fields)))
+}
+
+/// Normalize a RecordBatch to have lowercase column names.
+///
+/// This creates a new RecordBatch with a normalized schema while
+/// preserving all the data arrays.
+fn normalize_record_batch(batch: &RecordBatch) -> Result<RecordBatch> {
+    let normalized_schema = normalize_schema(batch.schema())?;
+    RecordBatch::try_new(normalized_schema, batch.columns().to_vec()).map_err(|e| {
+        GraphError::PlanError {
+            message: format!("Failed to normalize record batch schema: {}", e),
+            location: snafu::Location::new(file!(), line!(), column!()),
+        }
+    })
+}
 
 /// Execution strategy for Cypher queries
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -262,15 +298,9 @@ impl CypherQuery {
     ///
     /// **WARNING**: This method is experimental and the generated SQL dialect may change.
     ///
-    /// **Case Sensitivity Limitation**: All table names in the generated SQL are lowercased
-    /// (e.g., `Person` becomes `person`, `Company` becomes `company`), due to the internal
-    /// handling of DataFusion's SQL unparser. Note that this only affects the SQL string
-    /// representation - actual query execution with `execute()` handles case-sensitive labels
-    /// correctly.
-    ///
-    /// If you need case-sensitive table names in the SQL output, consider:
-    /// - Using lowercase labels consistently in your Cypher queries and table names
-    /// - Post-processing the SQL string to replace table names with the correct case
+    /// **Note**: All table names and column names in the generated SQL are lowercased
+    /// (e.g., `Person` becomes `person`, `fullName` becomes `fullname`), consistent with
+    /// the system's case-insensitive identifier behavior.
     ///
     /// # Arguments
     /// * `datasets` - HashMap of table name to RecordBatch (nodes and relationships)
@@ -548,17 +578,25 @@ impl CypherQuery {
 
         // Register all datasets as tables
         for (name, batch) in &datasets {
+            // Normalize the schema to lowercase field names
+            let normalized_batch = normalize_record_batch(batch)?;
+
             let mem_table = Arc::new(
-                MemTable::try_new(batch.schema(), vec![vec![batch.clone()]]).map_err(|e| {
-                    GraphError::PlanError {
-                        message: format!("Failed to create MemTable for {}: {}", name, e),
-                        location: snafu::Location::new(file!(), line!(), column!()),
-                    }
+                MemTable::try_new(
+                    normalized_batch.schema(),
+                    vec![vec![normalized_batch.clone()]],
+                )
+                .map_err(|e| GraphError::PlanError {
+                    message: format!("Failed to create MemTable for {}: {}", name, e),
+                    location: snafu::Location::new(file!(), line!(), column!()),
                 })?,
             );
 
+            // Normalize table name to lowercase
+            let normalized_name = name.to_lowercase();
+
             // Register in session context for execution
-            ctx.register_table(name, mem_table.clone())
+            ctx.register_table(&normalized_name, mem_table.clone())
                 .map_err(|e| GraphError::PlanError {
                     message: format!("Failed to register table {}: {}", name, e),
                     location: snafu::Location::new(file!(), line!(), column!()),
@@ -566,8 +604,8 @@ impl CypherQuery {
 
             let table_source = Arc::new(DefaultTableSource::new(mem_table));
 
-            // Register as both node and relationship source
-            // The planner will use whichever is appropriate based on the query
+            // Register as both node and relationship source with original name
+            // The config lookup is already case-insensitive, so we can use original name
             catalog = catalog
                 .with_node_source(name, table_source.clone())
                 .with_relationship_source(name, table_source);
@@ -644,7 +682,9 @@ impl CypherQuery {
             let provider: Arc<dyn TableProvider> =
                 Arc::new(LanceTableProvider::new(dataset.clone(), true, true));
 
-            ctx.register_table(&table_name, provider.clone())
+            // Register with lowercase table name for case-insensitive behavior
+            let normalized_table_name = table_name.to_lowercase();
+            ctx.register_table(&normalized_table_name, provider.clone())
                 .map_err(|e| GraphError::PlanError {
                     message: format!(
                         "Failed to register table '{}' in SessionContext: {}",
@@ -911,16 +951,22 @@ impl CypherQuery {
         }
 
         // Create DataFusion context and register all provided tables
+        // Normalize schemas and table names for case-insensitive behavior
         let ctx = SessionContext::new();
         for (name, batch) in &datasets {
-            let table =
-                MemTable::try_new(batch.schema(), vec![vec![batch.clone()]]).map_err(|e| {
-                    GraphError::PlanError {
-                        message: format!("Failed to create DataFusion table: {}", e),
-                        location: snafu::Location::new(file!(), line!(), column!()),
-                    }
-                })?;
-            ctx.register_table(name, Arc::new(table))
+            let normalized_batch = normalize_record_batch(batch)?;
+            let table = MemTable::try_new(
+                normalized_batch.schema(),
+                vec![vec![normalized_batch.clone()]],
+            )
+            .map_err(|e| GraphError::PlanError {
+                message: format!("Failed to create DataFusion table: {}", e),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            })?;
+
+            // Register with lowercase table name
+            let normalized_name = name.to_lowercase();
+            ctx.register_table(&normalized_name, Arc::new(table))
                 .map_err(|e| GraphError::PlanError {
                     message: format!("Failed to register table '{}': {}", name, e),
                     location: snafu::Location::new(file!(), line!(), column!()),

@@ -36,6 +36,7 @@
 //! ```
 
 pub mod ast;
+pub mod case_insensitive;
 pub mod config;
 pub mod datafusion_planner;
 pub mod error;

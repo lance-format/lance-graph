@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright The Lance Authors
 
+use crate::case_insensitive::qualify_column;
 use crate::error::{GraphError, Result};
 use datafusion::logical_expr::JoinType;
 
@@ -110,7 +111,7 @@ impl<'a> PathExecutor<'a> {
         let mut node_maps: HashMap<String, &crate::config::NodeMapping> = HashMap::new();
         let mut rel_maps: HashMap<String, &crate::config::RelationshipMapping> = HashMap::new();
         node_maps.insert(
-            start_alias.clone(),
+            start_alias.to_lowercase(),
             cfg.get_node_mapping(start_label)
                 .ok_or_else(|| GraphError::PlanError {
                     message: format!("No node mapping for '{}'", start_label),
@@ -119,7 +120,7 @@ impl<'a> PathExecutor<'a> {
         );
         for seg in &segs {
             node_maps.insert(
-                seg.end_alias.clone(),
+                seg.end_alias.to_lowercase(),
                 cfg.get_node_mapping(seg.end_label)
                     .ok_or_else(|| GraphError::PlanError {
                         message: format!("No node mapping for '{}'", seg.end_label),
@@ -127,7 +128,7 @@ impl<'a> PathExecutor<'a> {
                     })?,
             );
             rel_maps.insert(
-                seg.rel_alias.clone(),
+                seg.rel_alias.to_lowercase(),
                 cfg.get_relationship_mapping(seg.rel_type).ok_or_else(|| {
                     GraphError::PlanError {
                         message: format!("No relationship mapping for '{}'", seg.rel_type),
@@ -165,9 +166,7 @@ impl<'a> PathExecutor<'a> {
         let proj: Vec<datafusion::logical_expr::Expr> = schema
             .fields()
             .iter()
-            .map(|f| {
-                datafusion::logical_expr::col(f.name()).alias(format!("{}__{}", alias, f.name()))
-            })
+            .map(|f| datafusion::logical_expr::col(f.name()).alias(qualify_column(alias, f.name())))
             .collect();
         df.alias(alias)?
             .select(proj)
@@ -206,17 +205,20 @@ impl<'a> PathExecutor<'a> {
         let mut current_node_alias = self.start_alias.as_str();
         for s in &self.segs {
             let rel_df = self.open_aliased(s.rel_type, &s.rel_alias).await?;
-            let node_map = self.node_maps.get(current_node_alias).unwrap();
-            let rel_map = self.rel_maps.get(&s.rel_alias).unwrap();
+            let node_map = self
+                .node_maps
+                .get(&current_node_alias.to_lowercase())
+                .unwrap();
+            let rel_map = self.rel_maps.get(&s.rel_alias.to_lowercase()).unwrap();
             let (left_key, right_key) = match s.dir {
                 crate::ast::RelationshipDirection::Outgoing
                 | crate::ast::RelationshipDirection::Undirected => (
-                    format!("{}__{}", current_node_alias, node_map.id_field),
-                    format!("{}__{}", s.rel_alias, rel_map.source_id_field),
+                    qualify_column(current_node_alias, &node_map.id_field),
+                    qualify_column(&s.rel_alias, &rel_map.source_id_field),
                 ),
                 crate::ast::RelationshipDirection::Incoming => (
-                    format!("{}__{}", current_node_alias, node_map.id_field),
-                    format!("{}__{}", s.rel_alias, rel_map.target_id_field),
+                    qualify_column(current_node_alias, &node_map.id_field),
+                    qualify_column(&s.rel_alias, &rel_map.target_id_field),
                 ),
             };
             df = df
@@ -233,23 +235,16 @@ impl<'a> PathExecutor<'a> {
                 })?;
 
             let end_df = self.open_aliased(s.end_label, &s.end_alias).await?;
+            let end_node_map = self.node_maps.get(&s.end_alias.to_lowercase()).unwrap();
             let (left_key2, right_key2) = match s.dir {
                 crate::ast::RelationshipDirection::Outgoing
                 | crate::ast::RelationshipDirection::Undirected => (
-                    format!("{}__{}", s.rel_alias, rel_map.target_id_field),
-                    format!(
-                        "{}__{}",
-                        s.end_alias,
-                        self.node_maps.get(&s.end_alias).unwrap().id_field
-                    ),
+                    qualify_column(&s.rel_alias, &rel_map.target_id_field),
+                    qualify_column(&s.end_alias, &end_node_map.id_field),
                 ),
                 crate::ast::RelationshipDirection::Incoming => (
-                    format!("{}__{}", s.rel_alias, rel_map.source_id_field),
-                    format!(
-                        "{}__{}",
-                        s.end_alias,
-                        self.node_maps.get(&s.end_alias).unwrap().id_field
-                    ),
+                    qualify_column(&s.rel_alias, &rel_map.source_id_field),
+                    qualify_column(&s.end_alias, &end_node_map.id_field),
                 ),
             };
             df = df

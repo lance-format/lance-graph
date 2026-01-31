@@ -9,6 +9,7 @@
 //! Semantic analysis validates the query and enriches the AST with type information.
 
 use crate::ast::*;
+use crate::case_insensitive::CaseInsensitiveLookup;
 use crate::config::GraphConfig;
 use crate::error::{GraphError, Result};
 use std::collections::{HashMap, HashSet};
@@ -169,9 +170,10 @@ impl SemanticAnalyzer {
     fn analyze_unwind_clause(&mut self, unwind_clause: &UnwindClause) -> Result<()> {
         self.analyze_value_expression(&unwind_clause.expression)?;
 
-        // Register the aliased variable
+        // Register the aliased variable (normalize to lowercase for case-insensitive behavior)
         let var_name = &unwind_clause.alias;
-        if let Some(existing) = self.variables.get_mut(var_name) {
+        let var_name_lower = var_name.to_lowercase();
+        if let Some(existing) = self.variables.get_mut(&var_name_lower) {
             // Shadowing or redefinition - in Cypher variables can be bound multiple times in some contexts
             // But here we enforce uniqueness of types mostly.
             // For now, treat UNWIND alias as a Property type variable.
@@ -189,7 +191,7 @@ impl SemanticAnalyzer {
                 properties: HashSet::new(),
                 defined_in: self.current_scope.clone(),
             };
-            self.variables.insert(var_name.clone(), var_info);
+            self.variables.insert(var_name_lower, var_info);
         }
         Ok(())
     }
@@ -224,7 +226,9 @@ impl SemanticAnalyzer {
     /// Register a node variable
     fn register_node_variable(&mut self, node: &NodePattern) -> Result<()> {
         if let Some(var_name) = &node.variable {
-            if let Some(existing) = self.variables.get_mut(var_name) {
+            // Normalize to lowercase for case-insensitive behavior
+            let var_name_lower = var_name.to_lowercase();
+            if let Some(existing) = self.variables.get_mut(&var_name_lower) {
                 if existing.variable_type != VariableType::Node {
                     return Err(GraphError::PlanError {
                         message: format!("Variable '{}' redefined with different type", var_name),
@@ -247,7 +251,7 @@ impl SemanticAnalyzer {
                     properties: node.properties.keys().cloned().collect(),
                     defined_in: self.current_scope.clone(),
                 };
-                self.variables.insert(var_name.clone(), var_info);
+                self.variables.insert(var_name_lower, var_info);
             }
         }
         Ok(())
@@ -259,7 +263,9 @@ impl SemanticAnalyzer {
         var_name: &str,
         rel: &RelationshipPattern,
     ) -> Result<()> {
-        if let Some(existing) = self.variables.get_mut(var_name) {
+        // Normalize to lowercase for case-insensitive behavior
+        let var_name_lower = var_name.to_lowercase();
+        if let Some(existing) = self.variables.get_mut(&var_name_lower) {
             if existing.variable_type != VariableType::Relationship {
                 return Err(GraphError::PlanError {
                     message: format!("Variable '{}' redefined with different type", var_name),
@@ -282,7 +288,7 @@ impl SemanticAnalyzer {
                 properties: rel.properties.keys().cloned().collect(),
                 defined_in: self.current_scope.clone(),
             };
-            self.variables.insert(var_name.to_string(), var_info);
+            self.variables.insert(var_name_lower, var_info);
         }
         Ok(())
     }
@@ -350,7 +356,8 @@ impl SemanticAnalyzer {
                 // Literals are always valid
             }
             ValueExpression::Variable(var) => {
-                if !self.variables.contains_key(var) {
+                // Use case-insensitive lookup
+                if !self.variables.contains_key_ci(var) {
                     return Err(GraphError::PlanError {
                         message: format!("Undefined variable: '{}'", var),
                         location: snafu::Location::new(file!(), line!(), column!()),
@@ -548,7 +555,8 @@ impl SemanticAnalyzer {
     }
 
     fn register_projection_alias(&mut self, alias: &str) {
-        if self.variables.contains_key(alias) {
+        // Use case-insensitive lookup and store normalized key
+        if self.variables.contains_key_ci(alias) {
             return;
         }
 
@@ -559,12 +567,13 @@ impl SemanticAnalyzer {
             properties: HashSet::new(),
             defined_in: self.current_scope.clone(),
         };
-        self.variables.insert(alias.to_string(), var_info);
+        self.variables.insert(alias.to_lowercase(), var_info);
     }
 
     /// Validate property reference
     fn validate_property_reference(&self, prop_ref: &PropertyRef) -> Result<()> {
-        if !self.variables.contains_key(&prop_ref.variable) {
+        // Use case-insensitive lookup
+        if !self.variables.contains_key_ci(&prop_ref.variable) {
             return Err(GraphError::PlanError {
                 message: format!("Undefined variable: '{}'", prop_ref.variable),
                 location: snafu::Location::new(file!(), line!(), column!()),
@@ -660,8 +669,10 @@ impl SemanticAnalyzer {
                     if !label_property_sets.is_empty() {
                         'prop: for prop in &var_info.properties {
                             // Property is valid if present in at least one label's property_fields
+                            // Use case-insensitive comparison
+                            let prop_lower = prop.to_lowercase();
                             for fields in &label_property_sets {
-                                if fields.iter().any(|f| f == prop) {
+                                if fields.iter().any(|f| f.to_lowercase() == prop_lower) {
                                     continue 'prop;
                                 }
                             }
@@ -685,8 +696,10 @@ impl SemanticAnalyzer {
 
                     if !rel_property_sets.is_empty() {
                         'prop_rel: for prop in &var_info.properties {
+                            // Use case-insensitive comparison for relationship properties
+                            let prop_lower = prop.to_lowercase();
                             for fields in &rel_property_sets {
-                                if fields.iter().any(|f| f == prop) {
+                                if fields.iter().any(|f| f.to_lowercase() == prop_lower) {
                                     continue 'prop_rel;
                                 }
                             }

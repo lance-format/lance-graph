@@ -55,8 +55,9 @@ impl DataFusionPlanner {
             .map(|p| {
                 let expr = super::super::expression::to_df_value_expr(&p.expression);
                 // Apply alias if provided, otherwise use Cypher dot notation
+                // Normalize alias to lowercase for case-insensitive behavior
                 if let Some(alias) = &p.alias {
-                    expr.alias(alias)
+                    expr.alias(alias.to_lowercase())
                 } else {
                     // Convert to Cypher dot notation (e.g., p__name -> p.name)
                     let cypher_name =

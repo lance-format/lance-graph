@@ -14,11 +14,10 @@ use crate::source_catalog::GraphSourceCatalog;
 use std::sync::Arc;
 
 impl DataFusionPlanner {
-    /// Get relationship mapping from config
+    /// Get relationship mapping from config (case-insensitive)
     pub(crate) fn get_relationship_mapping(&self, rel_type: &str) -> Result<&RelationshipMapping> {
         self.config
-            .relationship_mappings
-            .get(rel_type)
+            .get_relationship_mapping(rel_type)
             .ok_or_else(|| crate::error::GraphError::ConfigError {
                 message: format!("No mapping found for relationship type: {}", rel_type),
                 location: snafu::Location::new(file!(), line!(), column!()),
@@ -79,14 +78,12 @@ impl DataFusionPlanner {
             });
         };
 
-        let node_map = self
-            .config
-            .node_mappings
-            .get(&target_label)
-            .ok_or_else(|| crate::error::GraphError::ConfigError {
+        let node_map = self.config.get_node_mapping(&target_label).ok_or_else(|| {
+            crate::error::GraphError::ConfigError {
                 message: format!("No mapping found for node label: {}", target_label),
                 location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
+            }
+        })?;
 
         Ok((target_label, node_map))
     }

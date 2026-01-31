@@ -11,6 +11,7 @@
 use super::analysis::{PlanningContext, RelationshipInstance};
 use super::DataFusionPlanner;
 use crate::ast::{PropertyValue, RelationshipDirection};
+use crate::case_insensitive::qualify_column;
 use crate::config::{NodeMapping, RelationshipMapping};
 use crate::error::Result;
 use crate::source_catalog::GraphSourceCatalog;
@@ -54,8 +55,8 @@ impl DataFusionPlanner {
             RelationshipDirection::Undirected => &params.rel_map.source_id_field,
         };
 
-        let qualified_left_key = format!("{}__{}", params.source_variable, params.node_id_field);
-        let qualified_right_key = format!("{}__{}", params.rel_qualifier, right_key);
+        let qualified_left_key = qualify_column(params.source_variable, params.node_id_field);
+        let qualified_right_key = qualify_column(params.rel_qualifier, right_key);
 
         LogicalPlanBuilder::from(left_plan)
             .join(
@@ -95,10 +96,11 @@ impl DataFusionPlanner {
 
         // Create target node scan with qualified column aliases and property filters
         let target_schema = target_source.schema();
-        let mut target_builder = LogicalPlanBuilder::scan(&target_label, target_source, None)
-            .map_err(|e| {
-                self.plan_error(&format!("Failed to scan target node '{}'", target_label), e)
-            })?;
+        let normalized_target_label = target_label.to_lowercase();
+        let mut target_builder =
+            LogicalPlanBuilder::scan(&normalized_target_label, target_source, None).map_err(
+                |e| self.plan_error(&format!("Failed to scan target node '{}'", target_label), e),
+            )?;
 
         // Apply target property filters (e.g., (b {age: 30}))
         for (k, v) in params.target_properties.iter() {
@@ -106,7 +108,7 @@ impl DataFusionPlanner {
                 &crate::ast::ValueExpression::Literal(v.clone()),
             );
             let filter_expr = Expr::BinaryExpr(BinaryExpr {
-                left: Box::new(col(k)),
+                left: Box::new(col(k.to_lowercase())),
                 op: Operator::Eq,
                 right: Box::new(lit_expr),
             });
@@ -119,7 +121,7 @@ impl DataFusionPlanner {
             .fields()
             .iter()
             .map(|field| {
-                let qualified_name = format!("{}__{}", params.target_variable, field.name());
+                let qualified_name = qualify_column(params.target_variable, field.name());
                 col(field.name()).alias(&qualified_name)
             })
             .collect();
@@ -137,9 +139,9 @@ impl DataFusionPlanner {
             RelationshipDirection::Undirected => &params.rel_map.target_id_field,
         };
 
-        let qualified_rel_target_key = format!("{}__{}", params.rel_qualifier, target_key);
+        let qualified_rel_target_key = qualify_column(params.rel_qualifier, target_key);
         let qualified_target_key =
-            format!("{}__{}", params.target_variable, &params.node_map.id_field);
+            qualify_column(params.target_variable, &params.node_map.id_field);
 
         builder = builder
             .join(
@@ -192,8 +194,8 @@ impl DataFusionPlanner {
         direction: &RelationshipDirection,
     ) -> Result<LogicalPlanBuilder> {
         let source_key = Self::get_source_join_key(direction, rel_map);
-        let qualified_source_key = format!("{}__{}", source_variable, &node_map.id_field);
-        let qualified_rel_source_key = format!("{}__{}", rel_instance.alias, source_key);
+        let qualified_source_key = qualify_column(source_variable, &node_map.id_field);
+        let qualified_rel_source_key = qualify_column(&rel_instance.alias, source_key);
 
         LogicalPlanBuilder::from(input_plan)
             .join(
@@ -221,8 +223,8 @@ impl DataFusionPlanner {
         direction: &RelationshipDirection,
     ) -> Result<LogicalPlanBuilder> {
         let target_key = Self::get_target_join_key(direction, rel_map);
-        let qualified_rel_target_key = format!("{}__{}", rel_instance.alias, target_key);
-        let qualified_target_key = format!("{}__{}", target_variable, &node_map.id_field);
+        let qualified_rel_target_key = qualify_column(&rel_instance.alias, target_key);
+        let qualified_target_key = qualify_column(target_variable, &node_map.id_field);
 
         builder
             .join(

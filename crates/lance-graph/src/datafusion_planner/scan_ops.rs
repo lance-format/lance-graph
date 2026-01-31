@@ -7,6 +7,7 @@
 
 use super::analysis::{PlanningContext, RelationshipInstance};
 use crate::ast::PropertyValue;
+use crate::case_insensitive::qualify_column;
 use crate::error::Result;
 use crate::source_catalog::GraphSourceCatalog;
 use datafusion::logical_expr::{col, BinaryExpr, Expr, LogicalPlan, LogicalPlanBuilder, Operator};
@@ -31,9 +32,12 @@ impl DataFusionPlanner {
             if let Some(source) = cat.node_source(label) {
                 // Get schema before moving source
                 let schema = source.schema();
-                let mut builder = LogicalPlanBuilder::scan(label, source, None).map_err(|e| {
-                    self.plan_error(&format!("Failed to scan node source '{}'", label), e)
-                })?;
+                // Normalize label for table scan (case-insensitive)
+                let normalized_label = label.to_lowercase();
+                let mut builder = LogicalPlanBuilder::scan(&normalized_label, source, None)
+                    .map_err(|e| {
+                        self.plan_error(&format!("Failed to scan node source '{}'", label), e)
+                    })?;
 
                 // Combine property filters into single predicate for efficiency
                 if !properties.is_empty() {
@@ -69,16 +73,12 @@ impl DataFusionPlanner {
                 }
 
                 // Create qualified column aliases: variable__property
-                // Optimization: Pre-allocate string capacity to reduce allocations
+                // Normalize both variable and field names for case-insensitive behavior
                 let qualified_exprs: Vec<Expr> = schema
                     .fields()
                     .iter()
                     .map(|field| {
-                        let mut qualified_name =
-                            String::with_capacity(variable.len() + field.name().len() + 2);
-                        qualified_name.push_str(variable);
-                        qualified_name.push_str("__");
-                        qualified_name.push_str(field.name());
+                        let qualified_name = qualify_column(variable, field.name());
                         col(field.name()).alias(&qualified_name)
                     })
                     .collect();
@@ -108,9 +108,11 @@ impl DataFusionPlanner {
         // This allows planners created with DataFusionPlanner::new() to work
         // without requiring a catalog, though they won't have actual data sources
         let empty_source = Arc::new(crate::source_catalog::SimpleTableSource::empty());
-        let builder = LogicalPlanBuilder::scan(label, empty_source, None).map_err(|e| {
-            self.plan_error(&format!("Failed to create table scan for '{}'", label), e)
-        })?;
+        let normalized_label = label.to_lowercase();
+        let builder =
+            LogicalPlanBuilder::scan(&normalized_label, empty_source, None).map_err(|e| {
+                self.plan_error(&format!("Failed to create table scan for '{}'", label), e)
+            })?;
 
         builder
             .build()
@@ -125,7 +127,8 @@ impl DataFusionPlanner {
         relationship_properties: &HashMap<String, PropertyValue>,
     ) -> Result<LogicalPlan> {
         let rel_schema = rel_source.schema();
-        let mut rel_builder = LogicalPlanBuilder::scan(&rel_instance.rel_type, rel_source, None)
+        let normalized_rel_type = rel_instance.rel_type.to_lowercase();
+        let mut rel_builder = LogicalPlanBuilder::scan(&normalized_rel_type, rel_source, None)
             .map_err(|e| {
                 self.plan_error(
                     &format!("Failed to scan relationship '{}'", rel_instance.rel_type),
@@ -156,7 +159,7 @@ impl DataFusionPlanner {
             .fields()
             .iter()
             .map(|field| {
-                let qualified_name = format!("{}__{}", rel_instance.alias, field.name());
+                let qualified_name = qualify_column(&rel_instance.alias, field.name());
                 col(field.name()).alias(&qualified_name)
             })
             .collect();
@@ -188,10 +191,8 @@ impl DataFusionPlanner {
         // Get source node label and schema
         if let Some(source_label) = ctx.analysis.var_to_label.get(source_variable) {
             if let Some(source) = cat.node_source(source_label) {
-                let source_schema = source.schema();
-                for field in source_schema.fields() {
-                    let qualified_name = format!("{}__{}", source_variable, field.name());
-                    expected.insert(qualified_name);
+                for field in source.schema().fields() {
+                    expected.insert(qualify_column(source_variable, field.name()));
                 }
             }
         }
@@ -199,10 +200,8 @@ impl DataFusionPlanner {
         // Get target node label and schema
         if let Some(target_label) = ctx.analysis.var_to_label.get(target_variable) {
             if let Some(target) = cat.node_source(target_label) {
-                let target_schema = target.schema();
-                for field in target_schema.fields() {
-                    let qualified_name = format!("{}__{}", target_variable, field.name());
-                    expected.insert(qualified_name);
+                for field in target.schema().fields() {
+                    expected.insert(qualify_column(target_variable, field.name()));
                 }
             }
         }
@@ -227,17 +226,19 @@ impl DataFusionPlanner {
             })?;
 
         let rel_schema = rel_source.schema();
-        let rel_builder = LogicalPlanBuilder::scan(&rel_instance.rel_type, rel_source, None)
+        let normalized_rel_type = rel_instance.rel_type.to_lowercase();
+        let rel_builder = LogicalPlanBuilder::scan(&normalized_rel_type, rel_source, None)
             .map_err(|e| crate::error::GraphError::PlanError {
                 message: format!("Failed to scan relationship: {}", e),
                 location: snafu::Location::new(file!(), line!(), column!()),
             })?;
 
+        let rel_alias_lower = rel_instance.alias.to_lowercase();
         let rel_qualified_exprs: Vec<Expr> = rel_schema
             .fields()
             .iter()
             .map(|field| {
-                let qualified_name = format!("{}__{}", rel_instance.alias, field.name());
+                let qualified_name = qualify_column(&rel_alias_lower, field.name());
                 col(field.name()).alias(&qualified_name)
             })
             .collect();
@@ -271,11 +272,14 @@ impl DataFusionPlanner {
         })?;
 
         let target_schema = target_source.schema();
-        let mut target_builder = LogicalPlanBuilder::scan(target_label, target_source, None)
-            .map_err(|e| crate::error::GraphError::PlanError {
-                message: format!("Failed to scan target node: {}", e),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
+        let normalized_target_label = target_label.to_lowercase();
+        let mut target_builder =
+            LogicalPlanBuilder::scan(&normalized_target_label, target_source, None).map_err(
+                |e| crate::error::GraphError::PlanError {
+                    message: format!("Failed to scan target node: {}", e),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                },
+            )?;
 
         // Apply target property filters
         for (k, v) in target_properties.iter() {
@@ -295,11 +299,12 @@ impl DataFusionPlanner {
             })?;
         }
 
+        let target_var_lower = target_variable.to_lowercase();
         let target_qualified_exprs: Vec<Expr> = target_schema
             .fields()
             .iter()
             .map(|field| {
-                let qualified_name = format!("{}__{}", target_variable, field.name());
+                let qualified_name = qualify_column(&target_var_lower, field.name());
                 col(field.name()).alias(&qualified_name)
             })
             .collect();

@@ -6,6 +6,7 @@
 //! Converts AST expressions to DataFusion expressions
 
 use crate::ast::{BooleanExpression, PropertyValue, ValueExpression};
+use crate::case_insensitive::qualify_column;
 use crate::datafusion_planner::udf;
 use datafusion::functions::string::lower;
 use datafusion::functions::string::upper;
@@ -110,11 +111,10 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
     use crate::ast::{PropertyValue as PV, ValueExpression as VE};
     match expr {
         VE::Property(prop) => {
-            // Create qualified column name: variable__property
-            let qualified_name = format!("{}__{}", prop.variable, prop.property);
-            col(&qualified_name)
+            // Create qualified column name: variable__property (lowercase for case-insensitivity)
+            col(qualify_column(&prop.variable, &prop.property))
         }
-        VE::Variable(v) => col(v),
+        VE::Variable(v) => col(v.to_lowercase()),
         VE::Literal(PV::String(s)) => lit(s.clone()),
         VE::Literal(PV::Integer(i)) => lit(*i),
         VE::Literal(PV::Float(f)) => lit(*f),
@@ -124,9 +124,8 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
         }
         VE::Literal(PV::Parameter(_)) => lit(0),
         VE::Literal(PV::Property(prop)) => {
-            // Create qualified column name: variable__property
-            let qualified_name = format!("{}__{}", prop.variable, prop.property);
-            col(&qualified_name)
+            // Create qualified column name: variable__property (lowercase for case-insensitivity)
+            col(qualify_column(&prop.variable, &prop.property))
         }
         VE::ScalarFunction { name, args } => {
             match name.to_lowercase().as_str() {
@@ -178,7 +177,8 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
                                 // Those cases will produce a runtime "column not found" error.
                                 // TODO: Consider using COUNT(1) for non-node variables, or add
                                 // semantic validation to reject COUNT(variable) for non-node types.
-                                col(format!("{}__id", v))
+                                // Use qualify_column for consistent case-insensitive normalization
+                                col(qualify_column(v, "id"))
                             }
                         } else {
                             // COUNT(p.property) - count non-null values of that property

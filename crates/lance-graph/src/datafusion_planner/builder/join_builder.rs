@@ -3,6 +3,7 @@
 
 //! Join inference and building
 
+use crate::case_insensitive::qualify_column;
 use crate::datafusion_planner::analysis::PlanningContext;
 use crate::datafusion_planner::DataFusionPlanner;
 use crate::error::Result;
@@ -163,14 +164,13 @@ impl DataFusionPlanner {
         for var in &shared_vars {
             // Try to resolve as a node variable first
             if let Some(label) = ctx.analysis.var_to_label.get(var) {
-                // This is a node variable - get the node mapping for its label
-                if let Some(node_map) = self.config.node_mappings.get(label) {
+                // This is a node variable - get the node mapping for its label (case-insensitive)
+                if let Some(node_map) = self.config.get_node_mapping(label) {
                     // Generate qualified column names for node ID
                     // Example: var="b", id_field="id" -> "b__id"
-                    let left_key = format!("{}__{}", var, node_map.id_field);
-                    let right_key = format!("{}__{}", var, node_map.id_field);
-                    left_keys.push(left_key);
-                    right_keys.push(right_key);
+                    let key = qualify_column(var, &node_map.id_field);
+                    left_keys.push(key.clone());
+                    right_keys.push(key);
                 }
             } else {
                 // Not a node variable - check if it's a relationship variable
@@ -192,10 +192,10 @@ impl DataFusionPlanner {
                         // The columns are qualified as: {alias}__{original_field_name}
                         // Example: var="r", source_id_field="src_person_id"
                         //          -> "r__src_person_id"
-                        let left_src = format!("{}__{}", var, &rel_map.source_id_field);
-                        let right_src = format!("{}__{}", var, &rel_map.source_id_field);
-                        let left_dst = format!("{}__{}", var, &rel_map.target_id_field);
-                        let right_dst = format!("{}__{}", var, &rel_map.target_id_field);
+                        let left_src = qualify_column(var, &rel_map.source_id_field);
+                        let right_src = qualify_column(var, &rel_map.source_id_field);
+                        let left_dst = qualify_column(var, &rel_map.target_id_field);
+                        let right_dst = qualify_column(var, &rel_map.target_id_field);
 
                         left_keys.push(left_src);
                         right_keys.push(right_src);

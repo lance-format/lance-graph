@@ -279,9 +279,9 @@ async fn test_execute_with_context_missing_table() {
 
     // Should error because Person table is not registered
     assert!(result.is_err());
-    let err_msg = result.unwrap_err().to_string();
+    let err_msg = result.unwrap_err().to_string().to_lowercase();
     assert!(
-        err_msg.contains("Person") && err_msg.contains("not found"),
+        err_msg.contains("person") && err_msg.contains("not found"),
         "Error should mention missing Person table: {}",
         err_msg
     );
