@@ -631,8 +631,15 @@ impl CypherQuery {
         let config = self.require_config()?;
 
         let mut required_tables: HashSet<String> = HashSet::new();
-        required_tables.extend(config.node_mappings.keys().cloned());
-        required_tables.extend(config.relationship_mappings.keys().cloned());
+        // Use original label/type names (not lowercase keys) for namespace resolution
+        // The namespace needs the original casing to find files on disk
+        required_tables.extend(config.node_mappings.values().map(|m| m.label.clone()));
+        required_tables.extend(
+            config
+                .relationship_mappings
+                .values()
+                .map(|m| m.relationship_type.clone()),
+        );
 
         if required_tables.is_empty() {
             return Err(GraphError::ConfigError {
