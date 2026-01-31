@@ -120,18 +120,39 @@ async fn test_clauses_case_insensitive() {
         // WHERE clause with different property cases
         ("MATCH (p:Person) WHERE p.isActive = true RETURN p.name", 2),
         ("MATCH (p:Person) WHERE p.ISACTIVE = true RETURN p.name", 2),
-        ("MATCH (p:Person) WHERE p.numFollowers > 100 RETURN p.name", 2),
-        ("MATCH (p:Person) WHERE p.NUMFOLLOWERS > 100 RETURN p.name", 2),
+        (
+            "MATCH (p:Person) WHERE p.numFollowers > 100 RETURN p.name",
+            2,
+        ),
+        (
+            "MATCH (p:Person) WHERE p.NUMFOLLOWERS > 100 RETURN p.name",
+            2,
+        ),
         // Variable case: lowercase p in MATCH, uppercase P in WHERE/RETURN
         ("MATCH (p:Person) WHERE P.isActive = true RETURN p.name", 2),
         ("MATCH (p:Person) RETURN P.name", 3),
-        ("MATCH (P:Person) WHERE p.numFollowers > 100 RETURN P.name", 2),
+        (
+            "MATCH (P:Person) WHERE p.numFollowers > 100 RETURN P.name",
+            2,
+        ),
         // ORDER BY with different property cases
-        ("MATCH (p:Person) RETURN p.name ORDER BY p.numFollowers DESC", 3),
-        ("MATCH (p:Person) RETURN p.name ORDER BY P.NUMFOLLOWERS DESC", 3),
+        (
+            "MATCH (p:Person) RETURN p.name ORDER BY p.numFollowers DESC",
+            3,
+        ),
+        (
+            "MATCH (p:Person) RETURN p.name ORDER BY P.NUMFOLLOWERS DESC",
+            3,
+        ),
         // Alias case: different case in ORDER BY
-        ("MATCH (p:Person) RETURN p.numFollowers AS Score ORDER BY score DESC", 3),
-        ("MATCH (p:Person) RETURN p.numFollowers AS score ORDER BY SCORE DESC", 3),
+        (
+            "MATCH (p:Person) RETURN p.numFollowers AS Score ORDER BY score DESC",
+            3,
+        ),
+        (
+            "MATCH (p:Person) RETURN p.numFollowers AS score ORDER BY SCORE DESC",
+            3,
+        ),
         // Aggregate functions with variable case
         ("MATCH (p:Person) RETURN count(P)", 1),
         ("MATCH (P:Person) RETURN count(p)", 1),
