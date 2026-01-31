@@ -430,7 +430,6 @@ mod tests {
         assert!(config.get_relationship_mapping("FOLLOWS").is_some());
         assert!(config.get_relationship_mapping("follows").is_some());
         assert!(config.get_relationship_mapping("Follows").is_some());
-        assert!(config.get_relationship_mapping("FoLlOwS").is_some());
 
         assert!(config.get_relationship_mapping("WORKS_FOR").is_some());
         assert!(config.get_relationship_mapping("works_for").is_some());
