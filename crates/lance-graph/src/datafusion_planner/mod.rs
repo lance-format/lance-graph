@@ -62,45 +62,6 @@ impl DataFusionPlanner {
         }
     }
 
-    pub fn plan_with_context(
-        &self,
-        logical_plan: &LogicalOperator,
-        datasets: &std::collections::HashMap<String, arrow::record_batch::RecordBatch>,
-    ) -> Result<LogicalPlan> {
-        use crate::source_catalog::{InMemoryCatalog, SimpleTableSource};
-
-        // Use the analyze() method to extract metadata
-        let analysis = analysis::analyze(logical_plan)?;
-
-        // Build an in-memory catalog from provided datasets (nodes and relationships)
-        let mut catalog = InMemoryCatalog::new();
-
-        // Register node sources from required datasets
-        for label in &analysis.required_datasets {
-            if self.config.node_mappings.contains_key(label) {
-                if let Some(batch) = datasets.get(label) {
-                    let src = Arc::new(SimpleTableSource::new(batch.schema()));
-                    catalog = catalog.with_node_source(label, src);
-                }
-            }
-        }
-
-        // Register relationship sources from required datasets
-        for rel_type in &analysis.required_datasets {
-            if self.config.relationship_mappings.contains_key(rel_type) {
-                if let Some(batch) = datasets.get(rel_type) {
-                    let src = Arc::new(SimpleTableSource::new(batch.schema()));
-                    catalog = catalog.with_relationship_source(rel_type, src);
-                }
-            }
-        }
-
-        // Plan using a planner bound to this catalog so scans get qualified projections
-        let planner_with_cat =
-            DataFusionPlanner::with_catalog(self.config.clone(), Arc::new(catalog));
-        planner_with_cat.plan(logical_plan)
-    }
-
     /// Helper to convert DataFusion builder errors into GraphError::PlanError with context
     pub(crate) fn plan_error<E: std::fmt::Display>(
         &self,
