@@ -29,7 +29,7 @@ first_value = "0"
 
 # Rust Cargo.toml files
 [[tool.bumpversion.files]]
-filename = "rust/lance-graph/Cargo.toml"
+filename = "crates/lance-graph/Cargo.toml"
 search = 'version = "{current_version}"'
 replace = 'version = "{new_version}"'
 
