@@ -589,9 +589,8 @@ fn parse_vector_similarity(input: &str) -> IResult<&str, ValueExpression> {
 
 // Parse parameter reference: $name
 fn parse_parameter(input: &str) -> IResult<&str, ValueExpression> {
-    let (input, _) = char('$')(input)?;
-    let (input, name) = identifier(input)?;
-    Ok((input, ValueExpression::Parameter(name.to_string())))
+    let (input, name) = parameter(input)?;
+    Ok((input, ValueExpression::Parameter(name)))
 }
 
 // Parse a function call: function_name(args)
@@ -973,9 +972,18 @@ fn boolean_literal(input: &str) -> IResult<&str, bool> {
 
 // Parse a parameter reference
 fn parameter(input: &str) -> IResult<&str, String> {
-    let (input, _) = char('$')(input)?;
-    let (input, name) = identifier(input)?;
-    Ok((input, name.to_string()))
+    alt((
+        // $param
+        map(preceded(char('$'), identifier), |s| s.to_string()),
+        // @param
+        map(preceded(char('@'), identifier), |s| s.to_string()),
+        // :param
+        map(preceded(char(':'), identifier), |s| s.to_string()),
+        // {param}
+        map(delimited(char('{'), identifier, char('}')), |s| {
+            s.to_string()
+        }),
+    ))(input)
 }
 
 // Parse comma with optional whitespace

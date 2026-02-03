@@ -48,6 +48,7 @@ impl DataFusionPlanner {
         target_label: &str,
         target_variable: &str,
         target_properties: &HashMap<String, PropertyValue>,
+        parameters: &HashMap<String, serde_json::Value>,
     ) -> Result<LogicalPlan> {
         let target_schema = target_source.schema();
         let normalized_target_label = target_label.to_lowercase();
@@ -60,6 +61,7 @@ impl DataFusionPlanner {
         for (k, v) in target_properties.iter() {
             let lit_expr = super::expression::to_df_value_expr(
                 &crate::ast::ValueExpression::Literal(v.clone()),
+                parameters,
             );
             let filter_expr = Expr::BinaryExpr(BinaryExpr {
                 left: Box::new(col(k.to_lowercase())),
@@ -213,6 +215,7 @@ impl DataFusionPlanner {
             &target_label,
             params.target_variable,
             params.target_properties,
+            ctx.parameters,
         )?;
 
         // Determine target join keys

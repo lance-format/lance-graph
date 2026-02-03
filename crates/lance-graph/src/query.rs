@@ -782,7 +782,8 @@ impl CypherQuery {
         let logical_plan = logical_planner.plan(&self.ast)?;
 
         // Phase 3: DataFusion Logical Plan
-        let df_planner = DataFusionPlanner::with_catalog(config.clone(), catalog);
+        let df_planner = DataFusionPlanner::with_catalog(config.clone(), catalog)
+            .with_parameters(self.parameters.clone());
         let df_logical_plan = df_planner.plan(&logical_plan)?;
 
         Ok((logical_plan, df_logical_plan))

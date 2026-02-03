@@ -59,7 +59,7 @@ impl DataFusionPlanner {
 
         // Build relationship scan with qualified columns and property filters
         let rel_scan =
-            self.build_relationship_scan(&rel_instance, rel_source, relationship_properties)?;
+            self.build_relationship_scan(ctx, &rel_instance, rel_source, relationship_properties)?;
 
         // Join source node with relationship
         let source_params = SourceJoinParams {
@@ -297,6 +297,7 @@ impl DataFusionPlanner {
 
         // Build target node scan and join
         let target_scan = self.build_qualified_target_scan(
+            ctx,
             catalog,
             &target_label,
             target_variable,

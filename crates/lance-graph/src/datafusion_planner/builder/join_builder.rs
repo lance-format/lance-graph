@@ -515,7 +515,8 @@ mod tests {
 
         // Analyze both patterns to build the context
         let left_analysis = analysis::analyze(&expand_left).unwrap();
-        let left_ctx = analysis::PlanningContext::new(&left_analysis);
+        let empty_params = std::collections::HashMap::new();
+        let left_ctx = analysis::PlanningContext::new(&left_analysis, &empty_params);
 
         // Test the key inference logic directly
         let (left_keys, right_keys) =

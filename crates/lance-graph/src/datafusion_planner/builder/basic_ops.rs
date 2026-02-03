@@ -17,7 +17,7 @@ impl DataFusionPlanner {
         predicate: &crate::ast::BooleanExpression,
     ) -> Result<LogicalPlan> {
         let input_plan = self.build_operator(ctx, input)?;
-        let expr = super::super::expression::to_df_boolean_expr(predicate);
+        let expr = super::super::expression::to_df_boolean_expr(predicate, ctx.parameters);
         LogicalPlanBuilder::from(input_plan)
             .filter(expr)
             .map_err(|e| self.plan_error("Failed to build filter", e))?
@@ -39,21 +39,23 @@ impl DataFusionPlanner {
             .any(|p| super::super::expression::contains_aggregate(&p.expression));
 
         if has_aggregates {
-            self.build_project_with_aggregates(input_plan, projections)
+            self.build_project_with_aggregates(ctx, input_plan, projections)
         } else {
-            self.build_simple_project(input_plan, projections)
+            self.build_simple_project(ctx, input_plan, projections)
         }
     }
 
     pub(crate) fn build_simple_project(
         &self,
+        ctx: &mut PlanningContext,
         input_plan: LogicalPlan,
         projections: &[ProjectionItem],
     ) -> Result<LogicalPlan> {
         let exprs: Vec<datafusion::logical_expr::Expr> = projections
             .iter()
             .map(|p| {
-                let expr = super::super::expression::to_df_value_expr(&p.expression);
+                let expr =
+                    super::super::expression::to_df_value_expr(&p.expression, ctx.parameters);
                 // Apply alias if provided, otherwise use Cypher dot notation
                 // Normalize alias to lowercase for case-insensitive behavior
                 if let Some(alias) = &p.alias {
@@ -98,7 +100,8 @@ impl DataFusionPlanner {
         let sort_exprs: Vec<SortExpr> = sort_items
             .iter()
             .map(|item| {
-                let expr = super::super::expression::to_df_value_expr(&item.expression);
+                let expr =
+                    super::super::expression::to_df_value_expr(&item.expression, ctx.parameters);
                 let asc = matches!(item.direction, crate::ast::SortDirection::Ascending);
                 SortExpr {
                     expr,
@@ -160,7 +163,7 @@ impl DataFusionPlanner {
         };
 
         // Convert expression to DataFusion Expr
-        let df_expr = super::super::expression::to_df_value_expr(expression);
+        let df_expr = super::super::expression::to_df_value_expr(expression, ctx.parameters);
 
         // We project the list expression first (aliased as the target alias temporarily)
         // DataFusion unnest takes a column name.
