@@ -377,12 +377,10 @@ impl LogicalPlanner {
 
         // For each segment, add an expand
         for segment in &path.segments {
-            // Determine / register target variable
-            let target_variable = segment
-                .end_node
-                .variable
-                .clone()
-                .unwrap_or_else(|| format!("_node_{}", self.variables.len()));
+            // Determine target variable and check for reuse
+            // TODO: create error types for these cases
+            let mut is_variable_reuse = false;
+            let mut original_variable_name = String::new();
 
             let target_label = segment
                 .end_node
@@ -390,8 +388,62 @@ impl LogicalPlanner {
                 .first()
                 .cloned()
                 .unwrap_or_else(|| "Node".to_string());
+
+            let target_variable = if let Some(ref var) = segment.end_node.variable {
+                if let Some(existing_label) = self.variables.get(var) {
+                    // Check for label mismatches
+                    if existing_label == "Node" {
+                        return Err(GraphError::PlanError {
+                            message: format!(
+                                "Variable '{}' is not assigned a node label but re-used",
+                                var
+                            ),
+                            location: snafu::Location::new(file!(), line!(), column!()),
+                        });
+                    }
+
+                    if target_label != "Node" && existing_label != &target_label {
+                         return Err(GraphError::PlanError {
+                            message: format!(
+                                "Variable '{}' has conflicting labels: '{}' and '{}'",
+                                var, existing_label, target_label
+                            ),
+                            location: snafu::Location::new(file!(), line!(), column!()),
+                        });
+                    }
+
+                    is_variable_reuse = true;
+                    original_variable_name = var.clone();
+                    // Create a unique shadow variable to avoid naming collision
+                    format!("_shadow_{}_{}", var, self.variables.len())
+                } else {
+                    var.clone()
+                }
+            } else {
+                format!("_node_{}", self.variables.len())
+            };
+
             self.variables
                 .insert(target_variable.clone(), target_label.clone());
+
+            // Validate that a relationship variable is not already defined
+            if let Some(ref rel_var) = segment.relationship.variable {
+                if let Some(_) = self.variables.get(rel_var) {
+                    return Err(GraphError::PlanError {
+                        message: format!("Variable cannot be re-used on a rel: '{}'", rel_var),
+                        location: snafu::Location::new(file!(), line!(), column!()),
+                    });
+                }
+
+                let rel_type = segment
+                    .relationship
+                    .types
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "Relationship".to_string());
+                self.variables
+                    .insert(rel_var.clone(), rel_type.clone());
+            }
 
             // Optimize fixed-length var-length expansions (*1 or *1..1)
             let next_plan = match segment.relationship.length.as_ref() {
@@ -435,6 +487,21 @@ impl LogicalPlanner {
             };
 
             plan = next_plan;
+
+            // If we reused a variable, add a filter to ensure identity equality
+            if is_variable_reuse {
+                let predicate = BooleanExpression::Comparison {
+                    left: ValueExpression::Variable(original_variable_name),
+                    operator: ComparisonOperator::Equal,
+                    right: ValueExpression::Variable(target_variable.clone()),
+                };
+
+                plan = LogicalOperator::Filter {
+                    input: Box::new(plan),
+                    predicate,
+                };
+            }
+
             current_src = target_variable;
         }
 
@@ -1169,6 +1236,136 @@ mod tests {
                 _ => panic!("Expected VariableLengthExpand for *..3"),
             },
             _ => panic!("Expected Project at top level"),
+        }
+    }
+
+    #[test]
+    fn test_var_reuse() {
+        let q = "MATCH (a:Person)-[:FOLLOWS]->(a) RETURN a";
+        let ast = parse_cypher_query(q).unwrap();
+        let mut planner = LogicalPlanner::new();
+        let logical = planner.plan(&ast).unwrap();
+
+        match logical {
+            LogicalOperator::Project { input, .. } => {
+                match *input {
+                    LogicalOperator::Filter {
+                        predicate,
+                        input: expand_input,
+                    } => {
+                         match predicate {
+                            BooleanExpression::Comparison {
+                                left,
+                                operator,
+                                right,
+                            } => {
+                                assert_eq!(operator, ComparisonOperator::Equal);
+                                match (left, right) {
+                                    (
+                                        ValueExpression::Variable(l),
+                                        ValueExpression::Variable(r),
+                                    ) => {
+                                        if l == "a" {
+                                            assert!(r.starts_with("_shadow_a_"));
+                                        } else if r == "a" {
+                                            assert!(l.starts_with("_shadow_a_"));
+                                        } else {
+                                            panic!("Expected comparison involving 'a' and a shadow variable");
+                                        }
+                                    }
+                                    _ => panic!("Expected equality check between variables"),
+                                }
+                            }
+                            _ => panic!("Expected comparison predicate"),
+                        }
+
+                         match *expand_input {
+                            LogicalOperator::Expand {
+                                source_variable,
+                                target_variable,
+                                relationship_types,
+                                input: scan_input,
+                                ..
+                            } => {
+                                assert_eq!(source_variable, "a");
+                                assert!(target_variable.starts_with("_shadow_a_"));
+                                assert_eq!(relationship_types, vec!["FOLLOWS".to_string()]);
+
+                                match *scan_input {
+                                     LogicalOperator::ScanByLabel { variable, label, .. } => {
+                                         assert_eq!(variable, "a");
+                                         assert_eq!(label, "Person");
+                                     }
+                                     _ => panic!("Expected Scan"),
+                                }
+                            }
+                            _ => panic!("Expected Expand"),
+                         }
+                    }
+                    _ => panic!("Expected Filter"),
+                }
+            }
+             _ => panic!("Expected Project"),
+        }
+    }
+
+    #[test]
+    fn test_var_reuse_unlabelled_existing_var_and_new_var() {
+        let q = "MATCH (a)-[:KNOWS]->(a) RETURN a.name";
+        let ast = parse_cypher_query(q).unwrap();
+        let mut planner = LogicalPlanner::new();
+        let result = planner.plan(&ast);
+        assert!(result.is_err());
+        match result {
+             Err(GraphError::PlanError { message, .. }) => {
+                 assert!(message.contains("Variable 'a' is not assigned a node label but re-used"));
+             }
+             _ => panic!("Expected PlanError"),
+        }
+    }
+
+    #[test]
+    fn test_var_reuse_unlabelled_existing_var_labelled_new_var() {
+        let q = "MATCH (a)-[:KNOWS]->(a:Company) RETURN a.name";
+        let ast = parse_cypher_query(q).unwrap();
+        let mut planner = LogicalPlanner::new();
+        let result = planner.plan(&ast);
+        assert!(result.is_err());
+        match result {
+             Err(GraphError::PlanError { message, .. }) => {
+                 assert!(message.contains("Variable 'a' is not assigned a node label but re-used"));
+             }
+             _ => panic!("Expected PlanError"),
+        }
+    }
+
+    #[test]
+    fn test_var_reuse_label_mismatch() {
+        let q = "MATCH (a:Person)-[:KNOWS]->(a:Company) RETURN a.name";
+        let ast = parse_cypher_query(q).unwrap();
+        let mut planner = LogicalPlanner::new();
+        let result = planner.plan(&ast);
+        assert!(result.is_err());
+        match result {
+             Err(GraphError::PlanError { message, .. }) => {
+                 assert!(message.contains("Variable 'a' has conflicting labels: 'Person' and 'Company'"));
+             }
+             _ => panic!("Expected PlanError"),
+        }
+    }
+
+    #[test]
+    fn test_var_reuse_rel() {
+        let q = "MATCH (a:Person)-[a:KNOWS]->(b:Company) RETURN a.name";
+        let ast = parse_cypher_query(q).unwrap();
+        let mut planner = LogicalPlanner::new();
+        let result = planner.plan(&ast);
+        assert!(result.is_err());
+        match result {
+             Err(GraphError::PlanError { message, .. }) => {
+                 assert!(message.contains("Variable cannot be re-used on a rel: 'a'"));
+             }
+             _ => panic!("Expected PlanError"),
         }
     }
 }
