@@ -1490,12 +1490,16 @@ mod tests {
     fn test_query_with_parameters() {
         let mut params = HashMap::new();
         params.insert("minAge".to_string(), serde_json::Value::Number(30.into()));
+        params.insert("maxAge".to_string(), serde_json::Value::Number(50.into()));
 
-        let query = CypherQuery::new("MATCH (n:Person) WHERE n.age > $minAge RETURN n.name")
-            .unwrap()
-            .with_parameters(params);
+        let query = CypherQuery::new(
+            "MATCH (n:Person) WHERE n.age > $minAge AND n.age < $maxAge RETURN n.name",
+        )
+        .unwrap()
+        .with_parameters(params);
 
         assert!(query.parameters().contains_key("minAge"));
+        assert!(query.parameters().contains_key("maxAge"));
     }
 
     #[test]

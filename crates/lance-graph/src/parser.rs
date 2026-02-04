@@ -1708,6 +1708,92 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_multiple_parameters() {
+        let query = "MATCH (p:Person) WHERE p.age > $min_age AND p.age < $max_age RETURN p";
+        let result = parse_cypher_query(query);
+        assert!(
+            result.is_ok(),
+            "Multiple parameters should parse successfully"
+        );
+
+        let ast = result.unwrap();
+        let where_clause = ast.where_clause.expect("Expected WHERE clause");
+
+        match where_clause.expression {
+            BooleanExpression::And(left, right) => {
+                // Check left: p.age > $min_age
+                match *left {
+                    BooleanExpression::Comparison {
+                        right: val_right, ..
+                    } => match val_right {
+                        ValueExpression::Parameter(name) => {
+                            assert_eq!(name, "min_age");
+                        }
+                        _ => panic!("Expected Parameter min_age"),
+                    },
+                    _ => panic!("Expected comparison on left"),
+                }
+
+                // Check right: p.age < $max_age
+                match *right {
+                    BooleanExpression::Comparison {
+                        right: val_right, ..
+                    } => match val_right {
+                        ValueExpression::Parameter(name) => {
+                            assert_eq!(name, "max_age");
+                        }
+                        _ => panic!("Expected Parameter max_age"),
+                    },
+                    _ => panic!("Expected comparison on right"),
+                }
+            }
+            _ => panic!("Expected AND expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_parameter_formats() {
+        // Test @param
+        let query = "MATCH (p:Person) WHERE p.age > @min_age RETURN p";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), "@param should parse successfully");
+        let where_clause = result.unwrap().where_clause.expect("Expected WHERE clause");
+        match where_clause.expression {
+            BooleanExpression::Comparison { right, .. } => match right {
+                ValueExpression::Parameter(name) => assert_eq!(name, "min_age"),
+                _ => panic!("Expected Parameter for @param"),
+            },
+            _ => panic!("Expected comparison"),
+        }
+
+        // Test :param
+        let query = "MATCH (p:Person) WHERE p.age > :min_age RETURN p";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), ":param should parse successfully");
+        let where_clause = result.unwrap().where_clause.expect("Expected WHERE clause");
+        match where_clause.expression {
+            BooleanExpression::Comparison { right, .. } => match right {
+                ValueExpression::Parameter(name) => assert_eq!(name, "min_age"),
+                _ => panic!("Expected Parameter for :param"),
+            },
+            _ => panic!("Expected comparison"),
+        }
+
+        // Test {param}
+        let query = "MATCH (p:Person) WHERE p.age > {min_age} RETURN p";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), "{{param}} should parse successfully");
+        let where_clause = result.unwrap().where_clause.expect("Expected WHERE clause");
+        match where_clause.expression {
+            BooleanExpression::Comparison { right, .. } => match right {
+                ValueExpression::Parameter(name) => assert_eq!(name, "min_age"),
+                _ => panic!("Expected Parameter for {{param}}"),
+            },
+            _ => panic!("Expected comparison"),
+        }
+    }
+
+    #[test]
     fn test_vector_distance_metrics() {
         for metric in &["cosine", "l2", "dot"] {
             let query = format!(
