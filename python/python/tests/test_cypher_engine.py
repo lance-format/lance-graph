@@ -173,25 +173,33 @@ def test_cypher_parameter_syntax(graph_env):
     config, datasets = graph_env
 
     # 1. Test $param
-    query_dollar = CypherQuery("MATCH (p:Person) WHERE p.age > $age RETURN p.name").with_config(config)
+    query_dollar = CypherQuery(
+        "MATCH (p:Person) WHERE p.age > $age RETURN p.name"
+    ).with_config(config)
     result = query_dollar.with_parameter("age", 30).execute(datasets)
     data = result.to_pydict()
     assert set(data["p.name"]) == {"Bob", "David"}
 
     # 2. Test @param
-    query_at = CypherQuery("MATCH (p:Person) WHERE p.age > @age RETURN p.name").with_config(config)
+    query_at = CypherQuery(
+        "MATCH (p:Person) WHERE p.age > @age RETURN p.name"
+    ).with_config(config)
     result = query_at.with_parameter("age", 30).execute(datasets)
     data = result.to_pydict()
     assert set(data["p.name"]) == {"Bob", "David"}
 
     # 3. Test :param
-    query_colon = CypherQuery("MATCH (p:Person) WHERE p.age > :age RETURN p.name").with_config(config)
+    query_colon = CypherQuery(
+        "MATCH (p:Person) WHERE p.age > :age RETURN p.name"
+    ).with_config(config)
     result = query_colon.with_parameter("age", 30).execute(datasets)
     data = result.to_pydict()
     assert set(data["p.name"]) == {"Bob", "David"}
 
     # 4. Test {param}
-    query_curly = CypherQuery("MATCH (p:Person) WHERE p.age > {age} RETURN p.name").with_config(config)
+    query_curly = CypherQuery(
+        "MATCH (p:Person) WHERE p.age > {age} RETURN p.name"
+    ).with_config(config)
     result = query_curly.with_parameter("age", 30).execute(datasets)
     data = result.to_pydict()
     assert set(data["p.name"]) == {"Bob", "David"}
@@ -201,8 +209,7 @@ def test_cypher_parameter_syntax(graph_env):
         "MATCH (p:Person) WHERE p.age > $min_age AND p.age < $max_age RETURN p.name"
     ).with_config(config)
     result = (
-        query_multi
-        .with_parameter("min_age", 25)
+        query_multi.with_parameter("min_age", 25)
         .with_parameter("max_age", 35)
         .execute(datasets)
     )
