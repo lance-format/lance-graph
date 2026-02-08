@@ -384,12 +384,33 @@ impl LogicalPlanner {
                 .clone()
                 .unwrap_or_else(|| format!("_node_{}", self.variables.len()));
 
-            let target_label = segment
-                .end_node
-                .labels
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "Node".to_string());
+            // Check if variable already exists and reuse its label
+            let target_label = if let Some(existing_label) = self.variables.get(&target_variable) {
+                // Variable already registered - reuse its label
+                if !segment.end_node.labels.is_empty() {
+                    // Label provided in AST - validate it matches
+                    let ast_label = &segment.end_node.labels[0];
+                    if ast_label != existing_label {
+                        return Err(GraphError::PlanError {
+                            message: format!(
+                                "Variable '{}' already has label '{}', cannot redefine as '{}'",
+                                target_variable, existing_label, ast_label
+                            ),
+                            location: snafu::Location::new(file!(), line!(), column!()),
+                        });
+                    }
+                }
+                existing_label.clone()
+            } else {
+                // New variable - get label from AST or default to "Node"
+                segment
+                    .end_node
+                    .labels
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "Node".to_string())
+            };
+
             self.variables
                 .insert(target_variable.clone(), target_label.clone());
 
