@@ -4982,13 +4982,13 @@ async fn test_datafusion_variable_reuse_with_count_distinct() {
         .unwrap();
 
     assert_eq!(result.num_rows(), 1);
-    
+
     let counts = result
         .column(0)
         .as_any()
         .downcast_ref::<Int64Array>()
         .unwrap();
-    
+
     // Distinct people who have at least 2 people knowing them:
     // Bob (known by Alice), Charlie (known by Alice and Bob),
     // David (known by Charlie), Eve (known by David) = 4 people
@@ -5024,9 +5024,21 @@ async fn test_datafusion_variable_reuse_triangle_pattern() {
     // Triangle: Alice->Bob->Charlie with Alice->Charlie shortcut
     assert_eq!(result.num_rows(), 1);
 
-    let a_names = result.column(0).as_any().downcast_ref::<StringArray>().unwrap();
-    let b_names = result.column(1).as_any().downcast_ref::<StringArray>().unwrap();
-    let c_names = result.column(2).as_any().downcast_ref::<StringArray>().unwrap();
+    let a_names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    let b_names = result
+        .column(1)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    let c_names = result
+        .column(2)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
 
     assert_eq!(a_names.value(0), "Alice");
     assert_eq!(b_names.value(0), "Bob");
