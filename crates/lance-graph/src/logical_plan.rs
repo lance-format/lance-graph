@@ -338,13 +338,18 @@ impl LogicalPlanner {
             .clone()
             .unwrap_or_else(|| format!("_node_{}", self.variables.len()));
 
-        let label = node
-            .labels
-            .first()
+        // Validate label consistency if variable already exists
+        self.validate_variable_label(&variable, &node.labels)?;
+
+        // Reuse existing label or derive from AST (default to "Node")
+        let label = self
+            .variables
+            .get(&variable)
             .cloned()
+            .or_else(|| node.labels.first().cloned())
             .unwrap_or_else(|| "Node".to_string());
 
-        // Register variable
+        // Register variable with its label
         self.variables.insert(variable.clone(), label.clone());
 
         Ok(LogicalOperator::ScanByLabel {
