@@ -120,7 +120,12 @@ Basic aggregations like `COUNT` are supported. Optional matches and subqueries a
 - `config` – Graph configuration types and builders.
 - `query` – High level `CypherQuery` API and runtime.
 - `error` – `GraphError` and result helpers.
-- `source_catalog` – Helpers for looking up table metadata.
+- `namespace` – Namespace helpers (re-exported from `lance-graph-catalog`).
+- `source_catalog` – Catalog helpers for looking up table metadata (re-exported from `lance-graph-catalog`).
+
+`lance-graph` re-exports the catalog and namespace types from the `lance-graph-catalog` crate for
+API compatibility. You can depend on `lance-graph-catalog` directly if you only need catalog or
+namespace utilities.
 
 ## Error Handling
 

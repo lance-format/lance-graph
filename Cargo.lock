@@ -3572,7 +3572,6 @@ dependencies = [
  "arrow",
  "arrow-array",
  "arrow-schema",
- "async-trait",
  "criterion",
  "datafusion",
  "datafusion-common",
@@ -3582,6 +3581,7 @@ dependencies = [
  "futures",
  "lance",
  "lance-arrow",
+ "lance-graph-catalog",
  "lance-index",
  "lance-linalg",
  "lance-namespace",
@@ -3590,6 +3590,18 @@ dependencies = [
  "serde_json",
  "snafu",
  "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "lance-graph-catalog"
+version = "0.5.2"
+dependencies = [
+ "arrow-schema",
+ "async-trait",
+ "datafusion",
+ "lance-namespace",
+ "snafu",
  "tokio",
 ]
 

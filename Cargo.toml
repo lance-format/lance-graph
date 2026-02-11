@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/lance-graph",
+    "crates/lance-graph-catalog",
 ]
 exclude = [
     "python",

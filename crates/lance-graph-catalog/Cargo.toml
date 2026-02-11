@@ -1,0 +1,21 @@
+[package]
+name = "lance-graph-catalog"
+version = "0.5.2"
+edition = "2021"
+license = "Apache-2.0"
+authors = ["Lance Devs <dev@lancedb.com>"]
+repository = "https://github.com/lancedb/lance-graph"
+readme = "README.md"
+description = "Catalog and namespace utilities for Lance graph"
+keywords = ["lance", "graph", "catalog", "namespace"]
+categories = ["database", "data-structures", "science"]
+
+[dependencies]
+arrow-schema = "56.2"
+async-trait = "0.1"
+datafusion = { version = "50.3", default-features = false }
+lance-namespace = "1.0.1"
+snafu = "0.8"
+
+[dev-dependencies]
+tokio = { version = "1.37", features = ["macros", "rt-multi-thread"] }

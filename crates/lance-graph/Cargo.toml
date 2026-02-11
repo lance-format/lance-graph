@@ -28,7 +28,7 @@ datafusion-expr = "50.3"
 datafusion-sql = "50.3"
 datafusion-functions-aggregate = "50.3"
 futures = "0.3"
-async-trait = "0.1"
+lance-graph-catalog = { path = "../lance-graph-catalog", version = "0.5.2" }
 lance = "1.0.0"
 lance-linalg = "1.0.0"
 lance-namespace = "1.0.1"
