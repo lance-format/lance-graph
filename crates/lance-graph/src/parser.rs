@@ -972,18 +972,8 @@ fn boolean_literal(input: &str) -> IResult<&str, bool> {
 
 // Parse a parameter reference
 fn parameter(input: &str) -> IResult<&str, String> {
-    alt((
-        // $param
-        map(preceded(char('$'), identifier), |s| s.to_string()),
-        // @param
-        map(preceded(char('@'), identifier), |s| s.to_string()),
-        // :param
-        map(preceded(char(':'), identifier), |s| s.to_string()),
-        // {param}
-        map(delimited(char('{'), identifier, char('}')), |s| {
-            s.to_string()
-        }),
-    ))(input)
+    // Only support $param syntax
+    map(preceded(char('$'), identifier), |s| s.to_string())(input)
 }
 
 // Parse comma with optional whitespace
@@ -1753,44 +1743,25 @@ mod tests {
 
     #[test]
     fn test_parse_parameter_formats() {
-        // Test @param
+        // Test $param (should succeed)
+        let query = "MATCH (p:Person) WHERE p.age > $min_age RETURN p";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), "$param should parse successfully");
+
+        // Test @param (should fail)
         let query = "MATCH (p:Person) WHERE p.age > @min_age RETURN p";
         let result = parse_cypher_query(query);
-        assert!(result.is_ok(), "@param should parse successfully");
-        let where_clause = result.unwrap().where_clause.expect("Expected WHERE clause");
-        match where_clause.expression {
-            BooleanExpression::Comparison { right, .. } => match right {
-                ValueExpression::Parameter(name) => assert_eq!(name, "min_age"),
-                _ => panic!("Expected Parameter for @param"),
-            },
-            _ => panic!("Expected comparison"),
-        }
+        assert!(result.is_err(), "@param should fail");
 
-        // Test :param
+        // Test :param (should fail)
         let query = "MATCH (p:Person) WHERE p.age > :min_age RETURN p";
         let result = parse_cypher_query(query);
-        assert!(result.is_ok(), ":param should parse successfully");
-        let where_clause = result.unwrap().where_clause.expect("Expected WHERE clause");
-        match where_clause.expression {
-            BooleanExpression::Comparison { right, .. } => match right {
-                ValueExpression::Parameter(name) => assert_eq!(name, "min_age"),
-                _ => panic!("Expected Parameter for :param"),
-            },
-            _ => panic!("Expected comparison"),
-        }
+        assert!(result.is_err(), ":param should fail");
 
-        // Test {param}
+        // Test {param} (should fail)
         let query = "MATCH (p:Person) WHERE p.age > {min_age} RETURN p";
         let result = parse_cypher_query(query);
-        assert!(result.is_ok(), "{{param}} should parse successfully");
-        let where_clause = result.unwrap().where_clause.expect("Expected WHERE clause");
-        match where_clause.expression {
-            BooleanExpression::Comparison { right, .. } => match right {
-                ValueExpression::Parameter(name) => assert_eq!(name, "min_age"),
-                _ => panic!("Expected Parameter for {{param}}"),
-            },
-            _ => panic!("Expected comparison"),
-        }
+        assert!(result.is_err(), "{{param}} should fail");
     }
 
     #[test]
