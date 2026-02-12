@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use lance_graph::namespace::DirNamespace;
+use lance_graph::DirNamespace;
 use pyo3::prelude::*;
 
 #[pyclass(name = "DirNamespace", module = "lance.graph")]

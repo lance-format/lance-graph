@@ -32,7 +32,7 @@ pub use analysis::{PlanningContext, QueryAnalysis, RelationshipInstance};
 use crate::config::GraphConfig;
 use crate::error::Result;
 use crate::logical_plan::LogicalOperator;
-use crate::source_catalog::GraphSourceCatalog;
+use lance_graph_catalog::GraphSourceCatalog;
 use datafusion::logical_expr::LogicalPlan;
 use std::sync::Arc;
 

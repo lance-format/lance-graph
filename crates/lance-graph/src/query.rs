@@ -8,7 +8,7 @@ use crate::ast::ReadingClause;
 use crate::config::GraphConfig;
 use crate::error::{GraphError, Result};
 use crate::logical_plan::LogicalPlanner;
-use crate::namespace::DirNamespace;
+use lance_graph_catalog::DirNamespace;
 use crate::parser::parse_cypher_query;
 use crate::simple_executor::{
     to_df_boolean_expr_simple, to_df_order_by_expr_simple, to_df_value_expr_simple, PathExecutor,
@@ -395,7 +395,7 @@ impl CypherQuery {
         &self,
         ctx: datafusion::execution::context::SessionContext,
     ) -> Result<arrow::record_batch::RecordBatch> {
-        use crate::source_catalog::InMemoryCatalog;
+        use lance_graph_catalog::InMemoryCatalog;
         use datafusion::datasource::DefaultTableSource;
         use std::sync::Arc;
 
@@ -463,7 +463,7 @@ impl CypherQuery {
     /// ```ignore
     /// use std::sync::Arc;
     /// use datafusion::execution::context::SessionContext;
-    /// use lance_graph::source_catalog::InMemoryCatalog;
+    /// use lance_graph::InMemoryCatalog;
     /// use lance_graph::query::CypherQuery;
     ///
     /// // Create custom catalog
@@ -481,7 +481,7 @@ impl CypherQuery {
     /// ```
     pub async fn execute_with_catalog_and_context(
         &self,
-        catalog: std::sync::Arc<dyn crate::source_catalog::GraphSourceCatalog>,
+        catalog: std::sync::Arc<dyn lance_graph_catalog::GraphSourceCatalog>,
         ctx: datafusion::execution::context::SessionContext,
     ) -> Result<arrow::record_batch::RecordBatch> {
         use arrow::compute::concat_batches;
@@ -557,10 +557,10 @@ impl CypherQuery {
         &self,
         datasets: HashMap<String, arrow::record_batch::RecordBatch>,
     ) -> Result<(
-        crate::source_catalog::InMemoryCatalog,
+        lance_graph_catalog::InMemoryCatalog,
         datafusion::execution::context::SessionContext,
     )> {
-        use crate::source_catalog::InMemoryCatalog;
+        use lance_graph_catalog::InMemoryCatalog;
         use datafusion::datasource::{DefaultTableSource, MemTable};
         use datafusion::execution::context::SessionContext;
         use std::sync::Arc;
@@ -619,10 +619,10 @@ impl CypherQuery {
         &self,
         namespace: std::sync::Arc<dyn lance_namespace::LanceNamespace + Send + Sync>,
     ) -> Result<(
-        crate::source_catalog::InMemoryCatalog,
+        lance_graph_catalog::InMemoryCatalog,
         datafusion::execution::context::SessionContext,
     )> {
-        use crate::source_catalog::InMemoryCatalog;
+        use lance_graph_catalog::InMemoryCatalog;
         use datafusion::datasource::{DefaultTableSource, TableProvider};
         use datafusion::execution::context::SessionContext;
         use lance::datafusion::LanceTableProvider;
@@ -740,7 +740,7 @@ impl CypherQuery {
     /// Internal helper to explain the query execution plan with explicit catalog and session context
     async fn explain_internal(
         &self,
-        catalog: std::sync::Arc<dyn crate::source_catalog::GraphSourceCatalog>,
+        catalog: std::sync::Arc<dyn lance_graph_catalog::GraphSourceCatalog>,
         ctx: datafusion::execution::context::SessionContext,
     ) -> Result<String> {
         // Create all plans (phases 1-4)
@@ -757,7 +757,7 @@ impl CypherQuery {
     /// DataFusion logical planning) without creating the physical plan.
     fn create_logical_plans(
         &self,
-        catalog: std::sync::Arc<dyn crate::source_catalog::GraphSourceCatalog>,
+        catalog: std::sync::Arc<dyn lance_graph_catalog::GraphSourceCatalog>,
     ) -> Result<(
         crate::logical_plan::LogicalOperator,
         datafusion::logical_expr::LogicalPlan,
@@ -791,7 +791,7 @@ impl CypherQuery {
     /// Helper to create all plans (graph logical, DataFusion logical, physical)
     async fn create_plans(
         &self,
-        catalog: std::sync::Arc<dyn crate::source_catalog::GraphSourceCatalog>,
+        catalog: std::sync::Arc<dyn lance_graph_catalog::GraphSourceCatalog>,
         ctx: &datafusion::execution::context::SessionContext,
     ) -> Result<(
         crate::logical_plan::LogicalOperator,

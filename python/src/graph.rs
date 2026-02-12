@@ -26,9 +26,8 @@ use datafusion::execution::context::SessionContext;
 use lance_graph::{
     ast::DistanceMetric as RustDistanceMetric, CypherQuery as RustCypherQuery,
     ExecutionStrategy as RustExecutionStrategy, GraphConfig as RustGraphConfig,
-    GraphError as RustGraphError, VectorSearch as RustVectorSearch,
+    GraphError as RustGraphError, VectorSearch as RustVectorSearch, InMemoryCatalog,
 };
-use lance_graph::source_catalog::InMemoryCatalog;
 use pyo3::{
     exceptions::{PyNotImplementedError, PyRuntimeError, PyValueError},
     prelude::*,
@@ -919,7 +918,7 @@ fn record_batch_to_python_table(
 #[pyclass(name = "CypherEngine", module = "lance.graph")]
 pub struct CypherEngine {
     config: RustGraphConfig,
-    catalog: Arc<dyn lance_graph::source_catalog::GraphSourceCatalog>,
+    catalog: Arc<dyn lance_graph::GraphSourceCatalog>,
     context: Arc<datafusion::execution::context::SessionContext>,
 }
 

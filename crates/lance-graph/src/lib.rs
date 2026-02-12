@@ -43,18 +43,16 @@ pub mod error;
 pub mod lance_native_planner;
 pub mod lance_vector_search;
 pub mod logical_plan;
-pub mod namespace;
 pub mod parser;
 pub mod query;
 pub mod semantic;
 pub mod simple_executor;
-pub mod source_catalog;
 
 /// Maximum allowed hops for variable-length relationship expansion (e.g., *1..N)
 pub const MAX_VARIABLE_LENGTH_HOPS: u32 = 20;
 
 pub use config::{GraphConfig, NodeMapping, RelationshipMapping};
 pub use error::{GraphError, Result};
+pub use lance_graph_catalog::{DirNamespace, GraphSourceCatalog, InMemoryCatalog, SimpleTableSource};
 pub use lance_vector_search::VectorSearch;
-pub use namespace::DirNamespace;
 pub use query::{CypherQuery, ExecutionStrategy};
