@@ -35,6 +35,7 @@ use crate::logical_plan::LogicalOperator;
 use datafusion::logical_expr::LogicalPlan;
 use lance_graph_catalog::GraphSourceCatalog;
 use std::collections::HashMap;
+
 use std::sync::Arc;
 
 /// Planner abstraction for graph-to-physical planning
@@ -46,7 +47,6 @@ pub trait GraphPhysicalPlanner {
 pub struct DataFusionPlanner {
     pub(crate) config: GraphConfig,
     pub(crate) catalog: Option<Arc<dyn GraphSourceCatalog>>,
-    pub(crate) parameters: HashMap<String, serde_json::Value>,
 }
 
 impl DataFusionPlanner {
@@ -54,7 +54,6 @@ impl DataFusionPlanner {
         Self {
             config,
             catalog: None,
-            parameters: HashMap::new(),
         }
     }
 
@@ -62,13 +61,7 @@ impl DataFusionPlanner {
         Self {
             config,
             catalog: Some(catalog),
-            parameters: HashMap::new(),
         }
-    }
-
-    pub fn with_parameters(mut self, params: HashMap<String, serde_json::Value>) -> Self {
-        self.parameters = params;
-        self
     }
 
     /// Helper to convert DataFusion builder errors into GraphError::PlanError with context
@@ -90,7 +83,7 @@ impl GraphPhysicalPlanner for DataFusionPlanner {
         let analysis = analysis::analyze(logical_plan)?;
 
         // Phase 2: Build execution plan with context
-        let mut ctx = PlanningContext::new(&analysis, &self.parameters);
+        let mut ctx = PlanningContext::new(&analysis);
         self.build_operator(&mut ctx, logical_plan)
     }
 }

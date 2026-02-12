@@ -38,18 +38,13 @@ pub struct RelationshipInstance {
 pub struct PlanningContext<'a> {
     pub analysis: &'a QueryAnalysis,
     pub(crate) relationship_instance_idx: HashMap<String, usize>,
-    pub parameters: &'a HashMap<String, serde_json::Value>,
 }
 
 impl<'a> PlanningContext<'a> {
-    pub fn new(
-        analysis: &'a QueryAnalysis,
-        parameters: &'a HashMap<String, serde_json::Value>,
-    ) -> Self {
+    pub fn new(analysis: &'a QueryAnalysis) -> Self {
         Self {
             analysis,
             relationship_instance_idx: HashMap::new(),
-            parameters,
         }
     }
 
@@ -388,8 +383,7 @@ mod tests {
             required_datasets: HashSet::new(),
         };
 
-        let empty_params = HashMap::new();
-        let mut ctx = PlanningContext::new(&analysis, &empty_params);
+        let mut ctx = PlanningContext::new(&analysis);
 
         // First call should return first instance
         let inst1 = ctx.next_relationship_instance("KNOWS").unwrap();

@@ -769,7 +769,7 @@ impl CypherQuery {
 
         // Phase 1: Semantic Analysis
         let mut analyzer = SemanticAnalyzer::new(config.clone());
-        let semantic = analyzer.analyze(&self.ast)?;
+        let semantic = analyzer.analyze(&self.ast, &self.parameters)?;
         if !semantic.errors.is_empty() {
             return Err(GraphError::PlanError {
                 message: format!("Semantic analysis failed:\n{}", semantic.errors.join("\n")),
@@ -779,11 +779,11 @@ impl CypherQuery {
 
         // Phase 2: Graph Logical Plan
         let mut logical_planner = LogicalPlanner::new(config);
-        let logical_plan = logical_planner.plan(&self.ast)?;
+        // Use the transformed AST (with parameters substituted)
+        let logical_plan = logical_planner.plan(&semantic.ast)?;
 
         // Phase 3: DataFusion Logical Plan
-        let df_planner = DataFusionPlanner::with_catalog(config.clone(), catalog)
-            .with_parameters(self.parameters.clone());
+        let df_planner = DataFusionPlanner::with_catalog(config.clone(), catalog);
         let df_logical_plan = df_planner.plan(&logical_plan)?;
 
         Ok((logical_plan, df_logical_plan))
@@ -944,7 +944,7 @@ impl CypherQuery {
 
         // Ensure we don't silently ignore unsupported features (e.g. scalar functions).
         let mut analyzer = SemanticAnalyzer::new(config);
-        let semantic = analyzer.analyze(&self.ast)?;
+        let semantic = analyzer.analyze(&self.ast, &self.parameters)?;
         if !semantic.errors.is_empty() {
             return Err(GraphError::PlanError {
                 message: format!("Semantic analysis failed:\n{}", semantic.errors.join("\n")),

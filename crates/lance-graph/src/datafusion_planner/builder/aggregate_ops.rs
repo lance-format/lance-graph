@@ -3,7 +3,6 @@
 
 //! Aggregation operations: Projection with aggregates and grouping
 
-use crate::datafusion_planner::analysis::PlanningContext;
 use crate::datafusion_planner::DataFusionPlanner;
 use crate::error::Result;
 use crate::logical_plan::*;
@@ -12,7 +11,6 @@ use datafusion::logical_expr::{col, LogicalPlan, LogicalPlanBuilder};
 impl DataFusionPlanner {
     pub(crate) fn build_project_with_aggregates(
         &self,
-        ctx: &mut PlanningContext,
         input_plan: LogicalPlan,
         projections: &[ProjectionItem],
     ) -> Result<LogicalPlan> {
@@ -23,7 +21,7 @@ impl DataFusionPlanner {
         let mut agg_aliases = Vec::new();
 
         for p in projections {
-            let expr = super::super::expression::to_df_value_expr(&p.expression, ctx.parameters);
+            let expr = super::super::expression::to_df_value_expr(&p.expression);
 
             if super::super::expression::contains_aggregate(&p.expression) {
                 // Aggregate expressions get aliased
@@ -46,8 +44,7 @@ impl DataFusionPlanner {
         for p in projections {
             if !super::super::expression::contains_aggregate(&p.expression) {
                 // Re-create the expression and apply alias
-                let expr =
-                    super::super::expression::to_df_value_expr(&p.expression, ctx.parameters);
+                let expr = super::super::expression::to_df_value_expr(&p.expression);
                 let aliased = if let Some(alias) = &p.alias {
                     expr.alias(alias)
                 } else {

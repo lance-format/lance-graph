@@ -215,3 +215,31 @@ def test_execute_with_directory_namespace(graph_env, tmp_path):
     data = result.to_pydict()
 
     assert set(data["p.name"]) == {"Bob", "David"}
+
+
+def test_cypher_parameter_syntax(graph_env):
+    """Test Cypher parameter syntax ($)."""
+    config, datasets, _ = graph_env
+
+    # 1. Test $param
+    query_dollar = CypherQuery(
+        "MATCH (p:Person) WHERE p.age > $age RETURN p.name"
+    ).with_config(config)
+    result = query_dollar.with_parameter("age", 30).execute(datasets)
+    data = result.to_pydict()
+    assert set(data["p.name"]) == {"Bob", "David"}
+
+    # 2. Test multiple parameters
+    query_multi = CypherQuery(
+        "MATCH (p:Person) WHERE p.age > $min_age AND p.age < $max_age RETURN p.name"
+    ).with_config(config)
+    result = (
+        query_multi.with_parameter("min_age", 25)
+        .with_parameter("max_age", 35)
+        .execute(datasets)
+    )
+    data = result.to_pydict()
+    # Should get Alice (28), Carol (29), Bob (34)
+    # David is 42 (excluded)
+    assert set(data["p.name"]) == {"Alice", "Carol", "Bob"}
+

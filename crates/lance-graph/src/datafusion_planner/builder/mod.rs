@@ -38,7 +38,7 @@ impl DataFusionPlanner {
                 label,
                 properties,
                 ..
-            } => self.build_scan(ctx, variable, label, properties),
+            } => self.build_scan(variable, label, properties),
             LogicalOperator::Filter { input, predicate } => {
                 self.build_filter(ctx, input, predicate)
             }

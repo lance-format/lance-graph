@@ -54,6 +54,8 @@ pub enum ScopeType {
 /// Semantic analysis result with validated and enriched AST
 #[derive(Debug, Clone)]
 pub struct SemanticResult {
+    /// The AST with parameters substituted and validated
+    pub ast: CypherQuery,
     pub variables: HashMap<String, VariableInfo>,
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
@@ -69,13 +71,23 @@ impl SemanticAnalyzer {
     }
 
     /// Analyze a Cypher query AST
-    pub fn analyze(&mut self, query: &CypherQuery) -> Result<SemanticResult> {
+    pub fn analyze(
+        &mut self,
+        query: &CypherQuery,
+        parameters: &HashMap<String, serde_json::Value>,
+    ) -> Result<SemanticResult> {
+        // Clone the query to perform parameter substitution
+        let mut analyzed_query = query.clone();
+
+        // Perform parameter substitution
+        self.substitute_parameters(&mut analyzed_query, parameters)?;
+
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
 
         // Phase 1: Variable discovery in READING clauses (MATCH/UNWIND)
         self.current_scope = ScopeType::Match;
-        for clause in &query.reading_clauses {
+        for clause in &analyzed_query.reading_clauses {
             match clause {
                 ReadingClause::Match(match_clause) => {
                     if let Err(e) = self.analyze_match_clause(match_clause) {
@@ -91,7 +103,7 @@ impl SemanticAnalyzer {
         }
 
         // Phase 2: Validate WHERE clause (before WITH)
-        if let Some(where_clause) = &query.where_clause {
+        if let Some(where_clause) = &analyzed_query.where_clause {
             self.current_scope = ScopeType::Where;
             if let Err(e) = self.analyze_where_clause(where_clause) {
                 errors.push(format!("WHERE clause error: {}", e));
@@ -99,7 +111,7 @@ impl SemanticAnalyzer {
         }
 
         // Phase 3: Validate WITH clause if present
-        if let Some(with_clause) = &query.with_clause {
+        if let Some(with_clause) = &analyzed_query.with_clause {
             self.current_scope = ScopeType::With;
             if let Err(e) = self.analyze_with_clause(with_clause) {
                 errors.push(format!("WITH clause error: {}", e));
@@ -108,7 +120,7 @@ impl SemanticAnalyzer {
 
         // Phase 4: Variable discovery in post-WITH READING clauses (query chaining)
         self.current_scope = ScopeType::Match;
-        for clause in &query.post_with_reading_clauses {
+        for clause in &analyzed_query.post_with_reading_clauses {
             match clause {
                 ReadingClause::Match(match_clause) => {
                     if let Err(e) = self.analyze_match_clause(match_clause) {
@@ -124,7 +136,7 @@ impl SemanticAnalyzer {
         }
 
         // Phase 4: Validate post-WITH WHERE clause if present
-        if let Some(post_where) = &query.post_with_where_clause {
+        if let Some(post_where) = &analyzed_query.post_with_where_clause {
             self.current_scope = ScopeType::PostWithWhere;
             if let Err(e) = self.analyze_where_clause(post_where) {
                 errors.push(format!("Post-WITH WHERE clause error: {}", e));
@@ -133,12 +145,12 @@ impl SemanticAnalyzer {
 
         // Phase 5: Validate RETURN clause
         self.current_scope = ScopeType::Return;
-        if let Err(e) = self.analyze_return_clause(&query.return_clause) {
+        if let Err(e) = self.analyze_return_clause(&analyzed_query.return_clause) {
             errors.push(format!("RETURN clause error: {}", e));
         }
 
         // Phase 6: Validate ORDER BY clause
-        if let Some(order_by) = &query.order_by {
+        if let Some(order_by) = &analyzed_query.order_by {
             self.current_scope = ScopeType::OrderBy;
             if let Err(e) = self.analyze_order_by_clause(order_by) {
                 errors.push(format!("ORDER BY clause error: {}", e));
@@ -152,6 +164,7 @@ impl SemanticAnalyzer {
         self.validate_types(&mut errors);
 
         Ok(SemanticResult {
+            ast: analyzed_query,
             variables: self.variables.clone(),
             errors,
             warnings,
@@ -730,6 +743,254 @@ impl SemanticAnalyzer {
         }
         Ok(())
     }
+    /// Substitute parameters with literal values in the AST
+    fn substitute_parameters(
+        &self,
+        query: &mut CypherQuery,
+        parameters: &HashMap<String, serde_json::Value>,
+    ) -> Result<()> {
+        // Substitute in READING clauses
+        for clause in &mut query.reading_clauses {
+            match clause {
+                ReadingClause::Match(match_clause) => {
+                    for pattern in &mut match_clause.patterns {
+                        self.substitute_in_graph_pattern(pattern, parameters)?;
+                    }
+                }
+                ReadingClause::Unwind(unwind_clause) => {
+                    self.substitute_in_value_expression(&mut unwind_clause.expression, parameters)?;
+                }
+            }
+        }
+
+        // Substitute in WHERE clause
+        if let Some(where_clause) = &mut query.where_clause {
+            self.substitute_in_where_clause(where_clause, parameters)?;
+        }
+
+        // Substitute in WITH clause
+        if let Some(with_clause) = &mut query.with_clause {
+            for item in &mut with_clause.items {
+                self.substitute_in_value_expression(&mut item.expression, parameters)?;
+            }
+            if let Some(order_by) = &mut with_clause.order_by {
+                for item in &mut order_by.items {
+                    self.substitute_in_value_expression(&mut item.expression, parameters)?;
+                }
+            }
+        }
+
+        // Substitute in post-WITH READING clauses
+        for clause in &mut query.post_with_reading_clauses {
+            match clause {
+                ReadingClause::Match(match_clause) => {
+                    for pattern in &mut match_clause.patterns {
+                        self.substitute_in_graph_pattern(pattern, parameters)?;
+                    }
+                }
+                ReadingClause::Unwind(unwind_clause) => {
+                    self.substitute_in_value_expression(&mut unwind_clause.expression, parameters)?;
+                }
+            }
+        }
+
+        // Substitute in post-WITH WHERE clause
+        if let Some(post_where) = &mut query.post_with_where_clause {
+            self.substitute_in_where_clause(post_where, parameters)?;
+        }
+
+        // Substitute in RETURN clause
+        for item in &mut query.return_clause.items {
+            self.substitute_in_value_expression(&mut item.expression, parameters)?;
+        }
+
+        // Substitute in ORDER BY clause
+        if let Some(order_by) = &mut query.order_by {
+            for item in &mut order_by.items {
+                self.substitute_in_value_expression(&mut item.expression, parameters)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn substitute_in_graph_pattern(
+        &self,
+        pattern: &mut GraphPattern,
+        parameters: &HashMap<String, serde_json::Value>,
+    ) -> Result<()> {
+        match pattern {
+            GraphPattern::Node(node) => {
+                for value in node.properties.values_mut() {
+                    self.substitute_in_property_value(value, parameters)?;
+                }
+            }
+            GraphPattern::Path(path) => {
+                for value in path.start_node.properties.values_mut() {
+                    self.substitute_in_property_value(value, parameters)?;
+                }
+                for segment in &mut path.segments {
+                    for value in segment.relationship.properties.values_mut() {
+                        self.substitute_in_property_value(value, parameters)?;
+                    }
+                    for value in segment.end_node.properties.values_mut() {
+                        self.substitute_in_property_value(value, parameters)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn substitute_in_property_value(
+        &self,
+        value: &mut PropertyValue,
+        parameters: &HashMap<String, serde_json::Value>,
+    ) -> Result<()> {
+        if let PropertyValue::Parameter(name) = value {
+            let param_value = parameters.get(name).ok_or_else(|| GraphError::PlanError {
+                message: format!("Missing parameter: ${}", name),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            })?;
+
+            *value = self.json_to_property_value(param_value)?;
+        }
+        Ok(())
+    }
+
+    fn substitute_in_where_clause(
+        &self,
+        where_clause: &mut WhereClause,
+        parameters: &HashMap<String, serde_json::Value>,
+    ) -> Result<()> {
+        self.substitute_in_boolean_expression(&mut where_clause.expression, parameters)
+    }
+
+    fn substitute_in_boolean_expression(
+        &self,
+        expr: &mut BooleanExpression,
+        parameters: &HashMap<String, serde_json::Value>,
+    ) -> Result<()> {
+        match expr {
+            BooleanExpression::Comparison { left, right, .. } => {
+                self.substitute_in_value_expression(left, parameters)?;
+                self.substitute_in_value_expression(right, parameters)?;
+            }
+            BooleanExpression::And(left, right) | BooleanExpression::Or(left, right) => {
+                self.substitute_in_boolean_expression(left, parameters)?;
+                self.substitute_in_boolean_expression(right, parameters)?;
+            }
+            BooleanExpression::Not(inner) => {
+                self.substitute_in_boolean_expression(inner, parameters)?;
+            }
+            BooleanExpression::Exists(_) => {}
+            BooleanExpression::In { expression, list } => {
+                self.substitute_in_value_expression(expression, parameters)?;
+                for item in list {
+                    self.substitute_in_value_expression(item, parameters)?;
+                }
+            }
+            BooleanExpression::Like { expression, .. }
+            | BooleanExpression::ILike { expression, .. }
+            | BooleanExpression::Contains { expression, .. }
+            | BooleanExpression::StartsWith { expression, .. }
+            | BooleanExpression::EndsWith { expression, .. }
+            | BooleanExpression::IsNull(expression)
+            | BooleanExpression::IsNotNull(expression) => {
+                self.substitute_in_value_expression(expression, parameters)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn substitute_in_value_expression(
+        &self,
+        expr: &mut ValueExpression,
+        parameters: &HashMap<String, serde_json::Value>,
+    ) -> Result<()> {
+        match expr {
+            ValueExpression::Parameter(name) => {
+                let param_value = parameters.get(name).ok_or_else(|| GraphError::PlanError {
+                    message: format!("Missing parameter: ${}", name),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
+
+                match self.json_to_property_value(param_value)? {
+                    // Try to convert to VectorLiteral if it's an array of numbers
+                    // Since PropertyValue doesn't support generic lists yet, strict JSON array -> PropertyValue
+                    // will likely fail or return Null/String. But we want to support VectorLiteral.
+                    // Let's rely on json_to_property_value first.
+                    // Wait, PropertyValue doesn't have VectorLiteral. ValueExpression does.
+                    // We need a way to convert JSON array to VectorLiteral.
+                    _ => {
+                        // Check for array to VectorLiteral conversion
+                        if let serde_json::Value::Array(arr) = param_value {
+                            let mut floats = Vec::new();
+                            for v in arr {
+                                if let Some(f) = v.as_f64() {
+                                    floats.push(f as f32);
+                                } else {
+                                    return Err(GraphError::PlanError {
+                                        message: format!(
+                                            "Parameter ${} is a list but contains non-numeric values. Only float vectors are supported as list parameters currently.",
+                                            name
+                                        ),
+                                        location: snafu::Location::new(file!(), line!(), column!()),
+                                    });
+                                }
+                            }
+                            *expr = ValueExpression::VectorLiteral(floats);
+                            return Ok(());
+                        }
+
+                        // Scalar conversion
+                        let prop_val = self.json_to_property_value(param_value)?;
+                        *expr = ValueExpression::Literal(prop_val);
+                    }
+                }
+            }
+            ValueExpression::ScalarFunction { args, .. }
+            | ValueExpression::AggregateFunction { args, .. } => {
+                for arg in args {
+                    self.substitute_in_value_expression(arg, parameters)?;
+                }
+            }
+            ValueExpression::Arithmetic { left, right, .. } => {
+                self.substitute_in_value_expression(left, parameters)?;
+                self.substitute_in_value_expression(right, parameters)?;
+            }
+            ValueExpression::VectorDistance { left, right, .. }
+            | ValueExpression::VectorSimilarity { left, right, .. } => {
+                self.substitute_in_value_expression(left, parameters)?;
+                self.substitute_in_value_expression(right, parameters)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn json_to_property_value(&self, value: &serde_json::Value) -> Result<PropertyValue> {
+        match value {
+            serde_json::Value::Null => Ok(PropertyValue::Null),
+            serde_json::Value::Bool(b) => Ok(PropertyValue::Boolean(*b)),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Ok(PropertyValue::Integer(i))
+                } else if let Some(f) = n.as_f64() {
+                    Ok(PropertyValue::Float(f))
+                } else {
+                    Ok(PropertyValue::Null)
+                }
+            }
+            serde_json::Value::String(s) => Ok(PropertyValue::String(s.clone())),
+            serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                Err(GraphError::PlanError {
+                    message: "Complex types (List, Map) are not fully supported as parameters yet (except float vectors).".to_string(),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -772,7 +1033,7 @@ mod tests {
             skip: None,
         };
         let mut analyzer = SemanticAnalyzer::new(test_config());
-        analyzer.analyze(&query)
+        analyzer.analyze(&query, &HashMap::new())
     }
 
     // Helper: analyze a query with a single MATCH (var:label) and a RETURN expression
@@ -802,7 +1063,7 @@ mod tests {
             skip: None,
         };
         let mut analyzer = SemanticAnalyzer::new(test_config());
-        analyzer.analyze(&query)
+        analyzer.analyze(&query, &HashMap::new())
     }
 
     #[test]
@@ -833,7 +1094,7 @@ mod tests {
         };
 
         let mut analyzer = SemanticAnalyzer::new(test_config());
-        let result = analyzer.analyze(&query).unwrap();
+        let result = analyzer.analyze(&query, &HashMap::new()).unwrap();
         assert!(result.errors.is_empty());
         let n = result.variables.get("n").expect("variable n present");
         // Labels merged
@@ -882,7 +1143,7 @@ mod tests {
         };
 
         let mut analyzer = SemanticAnalyzer::new(test_config());
-        let result = analyzer.analyze(&query).unwrap();
+        let result = analyzer.analyze(&query, &HashMap::new()).unwrap();
         assert!(result
             .errors
             .iter()
@@ -914,7 +1175,7 @@ mod tests {
         };
 
         let mut analyzer = SemanticAnalyzer::new(test_config());
-        let result = analyzer.analyze(&query).unwrap();
+        let result = analyzer.analyze(&query, &HashMap::new()).unwrap();
         assert!(result
             .errors
             .iter()
@@ -956,7 +1217,7 @@ mod tests {
         };
 
         let mut analyzer = SemanticAnalyzer::new(test_config());
-        let result = analyzer.analyze(&query).unwrap();
+        let result = analyzer.analyze(&query, &HashMap::new()).unwrap();
         assert!(result
             .errors
             .iter()
@@ -985,7 +1246,7 @@ mod tests {
         };
 
         let mut analyzer = SemanticAnalyzer::new(test_config());
-        let result = analyzer.analyze(&query).unwrap();
+        let result = analyzer.analyze(&query, &HashMap::new()).unwrap();
         assert!(result
             .warnings
             .iter()
@@ -1025,7 +1286,7 @@ mod tests {
         };
 
         let mut analyzer = SemanticAnalyzer::new(custom_config);
-        let result = analyzer.analyze(&query).unwrap();
+        let result = analyzer.analyze(&query, &HashMap::new()).unwrap();
         assert!(result
             .errors
             .iter()
@@ -1070,7 +1331,7 @@ mod tests {
         };
 
         let mut analyzer = SemanticAnalyzer::new(test_config());
-        let result = analyzer.analyze(&query).unwrap();
+        let result = analyzer.analyze(&query, &HashMap::new()).unwrap();
         assert!(result
             .errors
             .iter()
@@ -1137,7 +1398,7 @@ mod tests {
         };
 
         let mut analyzer = SemanticAnalyzer::new(custom_config);
-        let result = analyzer.analyze(&query).unwrap();
+        let result = analyzer.analyze(&query, &HashMap::new()).unwrap();
         let r = result.variables.get("r").expect("variable r present");
         // Types merged
         assert!(r.labels.contains(&"KNOWS".to_string()));
@@ -1145,6 +1406,58 @@ mod tests {
         // Properties unioned
         assert!(r.properties.contains("since"));
         assert!(r.properties.contains("level"));
+    }
+
+    #[test]
+    fn test_parameter_substitution() {
+        // MATCH (n:Person) WHERE n.age > $min_age RETURN n
+        let node = NodePattern::new(Some("n".to_string())).with_label("Person");
+        let where_clause = WhereClause {
+            expression: BooleanExpression::Comparison {
+                left: ValueExpression::Property(PropertyRef::new("n", "age")),
+                operator: crate::ast::ComparisonOperator::GreaterThan,
+                right: ValueExpression::Parameter("min_age".to_string()),
+            },
+        };
+        let query = CypherQuery {
+            reading_clauses: vec![ReadingClause::Match(MatchClause {
+                patterns: vec![GraphPattern::Node(node)],
+            })],
+            where_clause: Some(where_clause),
+            with_clause: None,
+            post_with_reading_clauses: vec![],
+            post_with_where_clause: None,
+            return_clause: ReturnClause {
+                distinct: false,
+                items: vec![ReturnItem {
+                    expression: ValueExpression::Variable("n".to_string()),
+                    alias: None,
+                }],
+            },
+            limit: None,
+            order_by: None,
+            skip: None,
+        };
+
+        let mut parameters = HashMap::new();
+        parameters.insert("min_age".to_string(), serde_json::json!(18));
+
+        let mut analyzer = SemanticAnalyzer::new(test_config());
+        let result = analyzer
+            .analyze(&query, &parameters)
+            .expect("Analysis failed");
+
+        // Verify substitution in AST
+        let where_clause = result.ast.where_clause.as_ref().unwrap();
+        match &where_clause.expression {
+            BooleanExpression::Comparison { right, .. } => match right {
+                ValueExpression::Literal(PropertyValue::Integer(val)) => {
+                    assert_eq!(*val, 18);
+                }
+                _ => panic!("Expected Integer literal, got {:?}", right),
+            },
+            _ => panic!("Expected Comparison expression"),
+        }
     }
 
     #[test]

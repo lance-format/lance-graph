@@ -140,8 +140,7 @@ mod tests {
         analysis
             .var_to_label
             .insert("b".to_string(), "Person".to_string());
-        let empty_params = std::collections::HashMap::new();
-        let ctx = PlanningContext::new(&analysis, &empty_params);
+        let ctx = PlanningContext::new(&analysis);
 
         let (label, node_map) = planner
             .get_target_node_mapping(&ctx, "b")
@@ -157,8 +156,7 @@ mod tests {
         analysis
             .var_to_label
             .insert("a".to_string(), "Person".to_string());
-        let empty_params = std::collections::HashMap::new();
-        let ctx = PlanningContext::new(&analysis, &empty_params);
+        let ctx = PlanningContext::new(&analysis);
 
         let (label, node_map) = planner
             .get_target_node_mapping(&ctx, "_temp_a_1")
@@ -171,8 +169,7 @@ mod tests {
     fn test_get_target_node_mapping_invalid_temp_variable() {
         let planner = planner_with_basic_config();
         let analysis = QueryAnalysis::default();
-        let empty_params = std::collections::HashMap::new();
-        let ctx = PlanningContext::new(&analysis, &empty_params);
+        let ctx = PlanningContext::new(&analysis);
 
         let err = planner
             .get_target_node_mapping(&ctx, "_temp_invalid")
@@ -188,8 +185,7 @@ mod tests {
         analysis
             .var_to_label
             .insert("a".to_string(), "Person".to_string());
-        let empty_params = std::collections::HashMap::new();
-        let ctx = PlanningContext::new(&analysis, &empty_params);
+        let ctx = PlanningContext::new(&analysis);
 
         let err = planner.get_target_node_mapping(&ctx, "c").unwrap_err();
         let msg = format!("{}", err);
@@ -207,8 +203,7 @@ mod tests {
         analysis
             .var_to_label
             .insert("b".to_string(), "Organization".to_string());
-        let empty_params = std::collections::HashMap::new();
-        let ctx = PlanningContext::new(&analysis, &empty_params);
+        let ctx = PlanningContext::new(&analysis);
 
         let err = planner.get_target_node_mapping(&ctx, "b").unwrap_err();
         let msg = format!("{}", err);

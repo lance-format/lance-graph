@@ -21,7 +21,6 @@ impl DataFusionPlanner {
     /// Build a qualified node scan with property filters and column aliasing
     pub(crate) fn build_scan(
         &self,
-        ctx: &PlanningContext,
         variable: &str,
         label: &str,
         properties: &HashMap<String, PropertyValue>,
@@ -46,7 +45,6 @@ impl DataFusionPlanner {
                         .map(|(k, v)| {
                             let lit_expr = super::expression::to_df_value_expr(
                                 &crate::ast::ValueExpression::Literal(v.clone()),
-                                ctx.parameters,
                             );
                             Expr::BinaryExpr(BinaryExpr {
                                 left: Box::new(col(k)),
@@ -123,7 +121,6 @@ impl DataFusionPlanner {
     /// Build a qualified relationship scan with property filters
     pub(crate) fn build_relationship_scan(
         &self,
-        ctx: &PlanningContext,
         rel_instance: &RelationshipInstance,
         rel_source: Arc<dyn datafusion::logical_expr::TableSource>,
         relationship_properties: &HashMap<String, PropertyValue>,
@@ -142,7 +139,6 @@ impl DataFusionPlanner {
         for (k, v) in relationship_properties.iter() {
             let lit_expr = super::expression::to_df_value_expr(
                 &crate::ast::ValueExpression::Literal(v.clone()),
-                ctx.parameters,
             );
             let filter_expr = Expr::BinaryExpr(BinaryExpr {
                 left: Box::new(col(k)),
@@ -262,7 +258,6 @@ impl DataFusionPlanner {
     /// Build a qualified target node scan with property filters
     pub(crate) fn build_qualified_target_scan(
         &self,
-        ctx: &PlanningContext,
         catalog: &Arc<dyn GraphSourceCatalog>,
         target_label: &str,
         target_variable: &str,
@@ -289,7 +284,6 @@ impl DataFusionPlanner {
         for (k, v) in target_properties.iter() {
             let lit_expr = super::expression::to_df_value_expr(
                 &crate::ast::ValueExpression::Literal(v.clone()),
-                ctx.parameters,
             );
             let filter_expr = Expr::BinaryExpr(BinaryExpr {
                 left: Box::new(col(k)),

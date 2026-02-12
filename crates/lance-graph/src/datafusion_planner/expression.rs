@@ -18,7 +18,6 @@ use datafusion_functions_aggregate::count::count_distinct;
 use datafusion_functions_aggregate::min_max::max;
 use datafusion_functions_aggregate::min_max::min;
 use datafusion_functions_aggregate::sum::sum;
-use std::collections::HashMap;
 
 /// Helper function to convert serde_json::Value to DataFusion ScalarValue
 fn json_to_scalar(value: &serde_json::Value) -> datafusion::scalar::ScalarValue {
@@ -41,15 +40,10 @@ fn json_to_scalar(value: &serde_json::Value) -> datafusion::scalar::ScalarValue 
 }
 
 /// Helper function to create LIKE expressions with consistent settings
-fn create_like_expr(
-    expression: &ValueExpression,
-    pattern: &str,
-    case_insensitive: bool,
-    parameters: &HashMap<String, serde_json::Value>,
-) -> Expr {
+fn create_like_expr(expression: &ValueExpression, pattern: &str, case_insensitive: bool) -> Expr {
     Expr::Like(datafusion::logical_expr::Like {
         negated: false,
-        expr: Box::new(to_df_value_expr(expression, parameters)),
+        expr: Box::new(to_df_value_expr(expression)),
         pattern: Box::new(lit(pattern.to_string())),
         escape_char: None,
         case_insensitive,
@@ -57,10 +51,7 @@ fn create_like_expr(
 }
 
 /// Convert BooleanExpression to DataFusion Expr
-pub(crate) fn to_df_boolean_expr(
-    expr: &BooleanExpression,
-    parameters: &HashMap<String, serde_json::Value>,
-) -> Expr {
+pub(crate) fn to_df_boolean_expr(expr: &BooleanExpression) -> Expr {
     use crate::ast::{BooleanExpression as BE, ComparisonOperator as CO};
     match expr {
         BE::Comparison {
@@ -68,8 +59,8 @@ pub(crate) fn to_df_boolean_expr(
             operator,
             right,
         } => {
-            let l = to_df_value_expr(left, parameters);
-            let r = to_df_value_expr(right, parameters);
+            let l = to_df_value_expr(left);
+            let r = to_df_value_expr(right);
             let op = match operator {
                 CO::Equal => Operator::Eq,
                 CO::NotEqual => Operator::NotEq,
@@ -86,66 +77,57 @@ pub(crate) fn to_df_boolean_expr(
         }
         BE::In { expression, list } => {
             use datafusion::logical_expr::expr::InList as DFInList;
-            let expr = to_df_value_expr(expression, parameters);
-            let list_exprs = list
-                .iter()
-                .map(|e| to_df_value_expr(e, parameters))
-                .collect::<Vec<_>>();
+            let expr = to_df_value_expr(expression);
+            let list_exprs = list.iter().map(|e| to_df_value_expr(e)).collect::<Vec<_>>();
             Expr::InList(DFInList::new(Box::new(expr), list_exprs, false))
         }
         BE::And(l, r) => Expr::BinaryExpr(BinaryExpr {
-            left: Box::new(to_df_boolean_expr(l, parameters)),
+            left: Box::new(to_df_boolean_expr(l)),
             op: Operator::And,
-            right: Box::new(to_df_boolean_expr(r, parameters)),
+            right: Box::new(to_df_boolean_expr(r)),
         }),
         BE::Or(l, r) => Expr::BinaryExpr(BinaryExpr {
-            left: Box::new(to_df_boolean_expr(l, parameters)),
+            left: Box::new(to_df_boolean_expr(l)),
             op: Operator::Or,
-            right: Box::new(to_df_boolean_expr(r, parameters)),
+            right: Box::new(to_df_boolean_expr(r)),
         }),
-        BE::Not(inner) => Expr::Not(Box::new(to_df_boolean_expr(inner, parameters))),
+        BE::Not(inner) => Expr::Not(Box::new(to_df_boolean_expr(inner))),
         BE::Exists(prop) => Expr::IsNotNull(Box::new(to_df_value_expr(
             &ValueExpression::Property(prop.clone()),
-            parameters,
         ))),
-        BE::IsNull(expression) => Expr::IsNull(Box::new(to_df_value_expr(expression, parameters))),
-        BE::IsNotNull(expression) => {
-            Expr::IsNotNull(Box::new(to_df_value_expr(expression, parameters)))
-        }
+        BE::IsNull(expression) => Expr::IsNull(Box::new(to_df_value_expr(expression))),
+        BE::IsNotNull(expression) => Expr::IsNotNull(Box::new(to_df_value_expr(expression))),
         BE::Like {
             expression,
             pattern,
-        } => create_like_expr(expression, pattern, false, parameters),
+        } => create_like_expr(expression, pattern, false),
         BE::ILike {
             expression,
             pattern,
-        } => create_like_expr(expression, pattern, true, parameters),
+        } => create_like_expr(expression, pattern, true),
         BE::Contains {
             expression,
             substring,
         } => {
             // CONTAINS is equivalent to LIKE '%substring%'
             let pattern = format!("%{}%", substring);
-            create_like_expr(expression, &pattern, false, parameters)
+            create_like_expr(expression, &pattern, false)
         }
         BE::StartsWith { expression, prefix } => {
             // STARTS WITH is equivalent to LIKE 'prefix%'
             let pattern = format!("{}%", prefix);
-            create_like_expr(expression, &pattern, false, parameters)
+            create_like_expr(expression, &pattern, false)
         }
         BE::EndsWith { expression, suffix } => {
             // ENDS WITH is equivalent to LIKE '%suffix'
             let pattern = format!("%{}", suffix);
-            create_like_expr(expression, &pattern, false, parameters)
+            create_like_expr(expression, &pattern, false)
         }
     }
 }
 
 /// Convert ValueExpression to DataFusion Expr
-pub(crate) fn to_df_value_expr(
-    expr: &ValueExpression,
-    parameters: &HashMap<String, serde_json::Value>,
-) -> Expr {
+pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
     use crate::ast::{PropertyValue as PV, ValueExpression as VE};
     match expr {
         VE::Property(prop) => {
@@ -161,12 +143,10 @@ pub(crate) fn to_df_value_expr(
             datafusion::logical_expr::Expr::Literal(datafusion::scalar::ScalarValue::Null, None)
         }
         VE::Literal(PV::Parameter(name)) => {
-            // Handle parameter in literal (if that ever happens, though usually it's separate)
-            if let Some(value) = parameters.get(name) {
-                Expr::Literal(json_to_scalar(value), None)
-            } else {
-                col(format!("${}", name))
-            }
+            panic!(
+                "Parameter ${} should have been substituted during semantic analysis",
+                name
+            );
         }
         VE::Literal(PV::Property(prop)) => {
             // Create qualified column name: variable__property (lowercase for case-insensitivity)
@@ -176,7 +156,7 @@ pub(crate) fn to_df_value_expr(
             match name.to_lowercase().as_str() {
                 "tolower" | "lower" => {
                     if args.len() == 1 {
-                        let arg_expr = to_df_value_expr(&args[0], parameters);
+                        let arg_expr = to_df_value_expr(&args[0]);
                         lower().call(vec![arg_expr])
                     } else {
                         // Invalid argument count - return NULL
@@ -185,7 +165,7 @@ pub(crate) fn to_df_value_expr(
                 }
                 "toupper" | "upper" => {
                     if args.len() == 1 {
-                        let arg_expr = to_df_value_expr(&args[0], parameters);
+                        let arg_expr = to_df_value_expr(&args[0]);
                         upper().call(vec![arg_expr])
                     } else {
                         // Invalid argument count - return NULL
@@ -227,7 +207,7 @@ pub(crate) fn to_df_value_expr(
                             }
                         } else {
                             // COUNT(p.property) - count non-null values of that property
-                            to_df_value_expr(&args[0], parameters)
+                            to_df_value_expr(&args[0])
                         };
 
                         // Use DataFusion's count or count_distinct
@@ -243,7 +223,7 @@ pub(crate) fn to_df_value_expr(
                 }
                 "sum" => {
                     if args.len() == 1 {
-                        let arg_expr = to_df_value_expr(&args[0], parameters);
+                        let arg_expr = to_df_value_expr(&args[0]);
                         sum(arg_expr)
                     } else {
                         lit(0)
@@ -251,7 +231,7 @@ pub(crate) fn to_df_value_expr(
                 }
                 "avg" => {
                     if args.len() == 1 {
-                        let arg_expr = to_df_value_expr(&args[0], parameters);
+                        let arg_expr = to_df_value_expr(&args[0]);
                         avg(arg_expr)
                     } else {
                         lit(0)
@@ -259,7 +239,7 @@ pub(crate) fn to_df_value_expr(
                 }
                 "min" => {
                     if args.len() == 1 {
-                        let arg_expr = to_df_value_expr(&args[0], parameters);
+                        let arg_expr = to_df_value_expr(&args[0]);
                         min(arg_expr)
                     } else {
                         lit(0)
@@ -267,7 +247,7 @@ pub(crate) fn to_df_value_expr(
                 }
                 "max" => {
                     if args.len() == 1 {
-                        let arg_expr = to_df_value_expr(&args[0], parameters);
+                        let arg_expr = to_df_value_expr(&args[0]);
                         max(arg_expr)
                     } else {
                         lit(0)
@@ -275,7 +255,7 @@ pub(crate) fn to_df_value_expr(
                 }
                 "collect" => {
                     if args.len() == 1 {
-                        let arg_expr = to_df_value_expr(&args[0], parameters);
+                        let arg_expr = to_df_value_expr(&args[0]);
                         array_agg(arg_expr)
                     } else {
                         lit(0)
@@ -298,8 +278,8 @@ pub(crate) fn to_df_value_expr(
             right,
         } => {
             use crate::ast::ArithmeticOperator as AO;
-            let l = to_df_value_expr(left, parameters);
-            let r = to_df_value_expr(right, parameters);
+            let l = to_df_value_expr(left);
+            let r = to_df_value_expr(right);
             let op = match operator {
                 AO::Add => Operator::Plus,
                 AO::Subtract => Operator::Minus,
@@ -320,8 +300,8 @@ pub(crate) fn to_df_value_expr(
         } => {
             // Create UDF for vector distance computation
             let udf = udf::create_vector_distance_udf(metric);
-            let left_expr = to_df_value_expr(left, parameters);
-            let right_expr = to_df_value_expr(right, parameters);
+            let left_expr = to_df_value_expr(left);
+            let right_expr = to_df_value_expr(right);
             Expr::ScalarFunction(datafusion::logical_expr::expr::ScalarFunction::new_udf(
                 udf,
                 vec![left_expr, right_expr],
@@ -334,8 +314,8 @@ pub(crate) fn to_df_value_expr(
         } => {
             // Create UDF for vector similarity computation
             let udf = udf::create_vector_similarity_udf(metric);
-            let left_expr = to_df_value_expr(left, parameters);
-            let right_expr = to_df_value_expr(right, parameters);
+            let left_expr = to_df_value_expr(left);
+            let right_expr = to_df_value_expr(right);
             Expr::ScalarFunction(datafusion::logical_expr::expr::ScalarFunction::new_udf(
                 udf,
                 vec![left_expr, right_expr],
@@ -361,11 +341,10 @@ pub(crate) fn to_df_value_expr(
             lit(scalar)
         }
         VE::Parameter(name) => {
-            if let Some(value) = parameters.get(name) {
-                Expr::Literal(json_to_scalar(value), None)
-            } else {
-                col(format!("${}", name))
-            }
+            panic!(
+                "Parameter ${} should have been substituted during semantic analysis",
+                name
+            );
         }
     }
 }
@@ -458,7 +437,7 @@ mod tests {
             right: ValueExpression::Literal(PropertyValue::Integer(30)),
         };
 
-        let df_expr = to_df_boolean_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_boolean_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(s.contains("p__age"), "Should contain qualified column");
         assert!(
@@ -489,7 +468,7 @@ mod tests {
                 right: ValueExpression::Literal(PropertyValue::Integer(30)),
             };
 
-            let df_expr = to_df_boolean_expr(&expr, &std::collections::HashMap::new());
+            let df_expr = to_df_boolean_expr(&expr);
             // Should successfully translate without panicking
             assert!(format!("{:?}", df_expr).contains("p__age"));
         }
@@ -517,7 +496,7 @@ mod tests {
             }),
         );
 
-        let df_expr = to_df_boolean_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_boolean_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(s.contains("And"), "Should contain AND operator");
         assert!(s.contains("p__age"), "Should contain column reference");
@@ -545,7 +524,7 @@ mod tests {
             }),
         );
 
-        let df_expr = to_df_boolean_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_boolean_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(s.contains("Or"), "Should contain OR operator");
     }
@@ -562,7 +541,7 @@ mod tests {
             right: ValueExpression::Literal(PropertyValue::Boolean(true)),
         }));
 
-        let df_expr = to_df_boolean_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_boolean_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(s.contains("Not"), "Should contain NOT operator");
     }
@@ -574,7 +553,7 @@ mod tests {
             property: "email".into(),
         });
 
-        let df_expr = to_df_boolean_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_boolean_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(
             s.contains("IsNotNull") || s.contains("p__email"),
@@ -595,8 +574,7 @@ mod tests {
             ],
         };
 
-        if let Expr::InList(in_list) = to_df_boolean_expr(&expr, &std::collections::HashMap::new())
-        {
+        if let Expr::InList(in_list) = to_df_boolean_expr(&expr) {
             assert!(!in_list.negated);
             assert_eq!(in_list.list.len(), 2);
             match *in_list.expr {
@@ -620,8 +598,7 @@ mod tests {
             pattern: "A%".into(),
         };
 
-        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr, &std::collections::HashMap::new())
-        {
+        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr) {
             assert!(!like_expr.negated, "Should not be negated");
             assert!(!like_expr.case_insensitive, "Should be case sensitive");
             assert_eq!(like_expr.escape_char, None, "Should have no escape char");
@@ -651,8 +628,7 @@ mod tests {
             pattern: "alice%".into(),
         };
 
-        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr, &std::collections::HashMap::new())
-        {
+        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr) {
             assert!(!like_expr.negated, "Should not be negated");
             assert!(
                 like_expr.case_insensitive,
@@ -693,8 +669,7 @@ mod tests {
             pattern: "Test%".into(),
         };
 
-        if let Expr::Like(like) = to_df_boolean_expr(&like_expr, &std::collections::HashMap::new())
-        {
+        if let Expr::Like(like) = to_df_boolean_expr(&like_expr) {
             assert!(
                 !like.case_insensitive,
                 "LIKE should be case-sensitive (case_insensitive = false)"
@@ -712,9 +687,7 @@ mod tests {
             pattern: "Test%".into(),
         };
 
-        if let Expr::Like(ilike) =
-            to_df_boolean_expr(&ilike_expr, &std::collections::HashMap::new())
-        {
+        if let Expr::Like(ilike) = to_df_boolean_expr(&ilike_expr) {
             assert!(
                 ilike.case_insensitive,
                 "ILIKE should be case-insensitive (case_insensitive = true)"
@@ -734,7 +707,7 @@ mod tests {
             pattern: "%@example.com".into(),
         };
 
-        let df_expr = to_df_boolean_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_boolean_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(
             s.contains("Like") || s.contains("like"),
@@ -753,8 +726,7 @@ mod tests {
             substring: "ali".into(),
         };
 
-        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr, &std::collections::HashMap::new())
-        {
+        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr) {
             assert!(!like_expr.negated, "Should not be negated");
             assert!(!like_expr.case_insensitive, "Should be case sensitive");
             assert_eq!(like_expr.escape_char, None, "Should have no escape char");
@@ -790,8 +762,7 @@ mod tests {
             prefix: "admin".into(),
         };
 
-        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr, &std::collections::HashMap::new())
-        {
+        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr) {
             assert!(!like_expr.negated, "Should not be negated");
             assert!(!like_expr.case_insensitive, "Should be case sensitive");
 
@@ -830,8 +801,7 @@ mod tests {
             suffix: "@example.com".into(),
         };
 
-        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr, &std::collections::HashMap::new())
-        {
+        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr) {
             assert!(!like_expr.negated, "Should not be negated");
             assert!(!like_expr.case_insensitive, "Should be case sensitive");
 
@@ -871,8 +841,7 @@ mod tests {
             substring: "Test".into(),
         };
 
-        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr, &std::collections::HashMap::new())
-        {
+        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr) {
             assert!(
                 !like_expr.case_insensitive,
                 "CONTAINS should be case-sensitive by default"
@@ -890,8 +859,7 @@ mod tests {
             substring: "test".into(),
         };
 
-        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr, &std::collections::HashMap::new())
-        {
+        if let Expr::Like(like_expr) = to_df_boolean_expr(&expr) {
             match *like_expr.expr {
                 Expr::Column(ref col_expr) => {
                     assert_eq!(
@@ -918,7 +886,7 @@ mod tests {
             property: "name".into(),
         });
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert_eq!(
             s,
@@ -929,7 +897,7 @@ mod tests {
     #[test]
     fn test_value_expr_literal_integer() {
         let expr = ValueExpression::Literal(PropertyValue::Integer(42));
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(s.contains("42") || s.contains("Int64(42)"));
     }
@@ -937,7 +905,7 @@ mod tests {
     #[test]
     fn test_value_expr_literal_float() {
         let expr = ValueExpression::Literal(PropertyValue::Float(std::f64::consts::PI));
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(s.contains("3.14") || s.contains("Float64"));
     }
@@ -945,7 +913,7 @@ mod tests {
     #[test]
     fn test_value_expr_literal_string() {
         let expr = ValueExpression::Literal(PropertyValue::String("hello".into()));
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(s.contains("hello") || s.contains("Utf8"));
     }
@@ -953,7 +921,7 @@ mod tests {
     #[test]
     fn test_value_expr_literal_boolean() {
         let expr = ValueExpression::Literal(PropertyValue::Boolean(true));
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(s.contains("true") || s.contains("Boolean"));
     }
@@ -961,7 +929,7 @@ mod tests {
     #[test]
     fn test_value_expr_literal_null() {
         let expr = ValueExpression::Literal(PropertyValue::Null);
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         // Null literals are translated to Literal with Null value
         assert!(s.contains("Literal"), "Should be a Literal expression");
@@ -979,7 +947,7 @@ mod tests {
             right: Box::new(ValueExpression::Literal(PropertyValue::Integer(5))),
         };
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         // Arithmetic expressions should now return a BinaryExpr with Plus operator
         assert!(s.contains("BinaryExpr"), "Should be a BinaryExpr");
@@ -1008,7 +976,7 @@ mod tests {
                 right: Box::new(ValueExpression::Literal(PropertyValue::Integer(2))),
             };
 
-            let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+            let df_expr = to_df_value_expr(&expr);
             let s = format!("{:?}", df_expr);
             // Should translate to BinaryExpr with the correct operator
             assert!(
@@ -1032,7 +1000,7 @@ mod tests {
             distinct: false,
         };
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(
             s.contains("count") || s.contains("Count"),
@@ -1051,7 +1019,7 @@ mod tests {
             distinct: false,
         };
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(
             s.contains("count") || s.contains("Count"),
@@ -1071,7 +1039,7 @@ mod tests {
             distinct: false,
         };
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(
             s.contains("sum") || s.contains("Sum"),
@@ -1091,7 +1059,7 @@ mod tests {
             distinct: false,
         };
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(
             s.contains("avg") || s.contains("Avg"),
@@ -1111,7 +1079,7 @@ mod tests {
             distinct: false,
         };
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(
             s.contains("min") || s.contains("Min"),
@@ -1131,7 +1099,7 @@ mod tests {
             distinct: false,
         };
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(
             s.contains("max") || s.contains("Max"),
@@ -1150,7 +1118,7 @@ mod tests {
             })],
         };
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         // Should be a ScalarFunction with lower
         assert!(
@@ -1171,7 +1139,7 @@ mod tests {
             })],
         };
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         // Should be a ScalarFunction with upper
         assert!(
@@ -1193,7 +1161,7 @@ mod tests {
             })],
         };
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(
             s.contains("lower") || s.contains("Lower"),
@@ -1213,7 +1181,7 @@ mod tests {
             })],
         };
 
-        let df_expr = to_df_value_expr(&expr, &std::collections::HashMap::new());
+        let df_expr = to_df_value_expr(&expr);
         let s = format!("{:?}", df_expr);
         assert!(
             s.contains("upper") || s.contains("Upper"),
@@ -1239,7 +1207,7 @@ mod tests {
             substring: "offer".into(),
         };
 
-        let df_expr = to_df_boolean_expr(&contains_expr, &HashMap::new());
+        let df_expr = to_df_boolean_expr(&contains_expr);
         let s = format!("{:?}", df_expr);
 
         // Should be a Like expression with lower() on the column, not lit(0)
