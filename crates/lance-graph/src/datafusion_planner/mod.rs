@@ -32,8 +32,8 @@ pub use analysis::{PlanningContext, QueryAnalysis, RelationshipInstance};
 use crate::config::GraphConfig;
 use crate::error::Result;
 use crate::logical_plan::LogicalOperator;
-use lance_graph_catalog::GraphSourceCatalog;
 use datafusion::logical_expr::LogicalPlan;
+use lance_graph_catalog::GraphSourceCatalog;
 use std::sync::Arc;
 
 /// Planner abstraction for graph-to-physical planning

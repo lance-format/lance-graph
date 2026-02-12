@@ -53,6 +53,8 @@ pub const MAX_VARIABLE_LENGTH_HOPS: u32 = 20;
 
 pub use config::{GraphConfig, NodeMapping, RelationshipMapping};
 pub use error::{GraphError, Result};
-pub use lance_graph_catalog::{DirNamespace, GraphSourceCatalog, InMemoryCatalog, SimpleTableSource};
+pub use lance_graph_catalog::{
+    DirNamespace, GraphSourceCatalog, InMemoryCatalog, SimpleTableSource,
+};
 pub use lance_vector_search::VectorSearch;
 pub use query::{CypherQuery, ExecutionStrategy};

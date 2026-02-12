@@ -8,13 +8,13 @@ use crate::ast::ReadingClause;
 use crate::config::GraphConfig;
 use crate::error::{GraphError, Result};
 use crate::logical_plan::LogicalPlanner;
-use lance_graph_catalog::DirNamespace;
 use crate::parser::parse_cypher_query;
 use crate::simple_executor::{
     to_df_boolean_expr_simple, to_df_order_by_expr_simple, to_df_value_expr_simple, PathExecutor,
 };
 use arrow_array::RecordBatch;
 use arrow_schema::{Field, Schema, SchemaRef};
+use lance_graph_catalog::DirNamespace;
 use lance_namespace::models::DescribeTableRequest;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -395,8 +395,8 @@ impl CypherQuery {
         &self,
         ctx: datafusion::execution::context::SessionContext,
     ) -> Result<arrow::record_batch::RecordBatch> {
-        use lance_graph_catalog::InMemoryCatalog;
         use datafusion::datasource::DefaultTableSource;
+        use lance_graph_catalog::InMemoryCatalog;
         use std::sync::Arc;
 
         let config = self.require_config()?;
@@ -560,9 +560,9 @@ impl CypherQuery {
         lance_graph_catalog::InMemoryCatalog,
         datafusion::execution::context::SessionContext,
     )> {
-        use lance_graph_catalog::InMemoryCatalog;
         use datafusion::datasource::{DefaultTableSource, MemTable};
         use datafusion::execution::context::SessionContext;
+        use lance_graph_catalog::InMemoryCatalog;
         use std::sync::Arc;
 
         if datasets.is_empty() {
@@ -622,10 +622,10 @@ impl CypherQuery {
         lance_graph_catalog::InMemoryCatalog,
         datafusion::execution::context::SessionContext,
     )> {
-        use lance_graph_catalog::InMemoryCatalog;
         use datafusion::datasource::{DefaultTableSource, TableProvider};
         use datafusion::execution::context::SessionContext;
         use lance::datafusion::LanceTableProvider;
+        use lance_graph_catalog::InMemoryCatalog;
         use std::sync::Arc;
 
         let config = self.require_config()?;

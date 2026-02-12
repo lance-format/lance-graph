@@ -9,8 +9,8 @@ use super::analysis::{PlanningContext, RelationshipInstance};
 use crate::ast::PropertyValue;
 use crate::case_insensitive::qualify_column;
 use crate::error::Result;
-use lance_graph_catalog::GraphSourceCatalog;
 use datafusion::logical_expr::{col, BinaryExpr, Expr, LogicalPlan, LogicalPlanBuilder, Operator};
+use lance_graph_catalog::GraphSourceCatalog;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 

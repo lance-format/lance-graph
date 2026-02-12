@@ -5,8 +5,8 @@
 
 use crate::config::GraphConfig;
 use crate::logical_plan::LogicalOperator;
-use lance_graph_catalog::{InMemoryCatalog, SimpleTableSource};
 use arrow_schema::{DataType, Field, Schema};
+use lance_graph_catalog::{InMemoryCatalog, SimpleTableSource};
 use std::sync::Arc;
 
 pub fn person_schema() -> Arc<Schema> {
