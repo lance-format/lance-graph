@@ -116,9 +116,9 @@ def test_gil_release_during_to_sql():
     )
 
     datasets = create_test_datasets()
-    query = CypherQuery("MATCH (p:Person)-[:KNOWS]->(f:Person) RETURN p.name, f.name").with_config(
-        config
-    )
+    query = CypherQuery(
+        "MATCH (p:Person)-[:KNOWS]->(f:Person) RETURN p.name, f.name"
+    ).with_config(config)
 
     heartbeats = [0]
     stop_event = threading.Event()
