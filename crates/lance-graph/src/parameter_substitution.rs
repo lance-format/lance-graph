@@ -8,8 +8,8 @@ pub fn substitute_parameters(
     parameters: &HashMap<String, serde_json::Value>,
 ) -> Result<()> {
     // Substitute in READING clauses
-    for clause in &mut query.reading_clauses {
-        substitute_in_reading_clause(clause, parameters)?;
+    for reading_clause in &mut query.reading_clauses {
+        substitute_in_reading_clause(reading_clause, parameters)?;
     }
 
     // Substitute in WHERE clause
@@ -23,8 +23,8 @@ pub fn substitute_parameters(
     }
 
     // Substitute in post-WITH READING clauses
-    for clause in &mut query.post_with_reading_clauses {
-        substitute_in_reading_clause(clause, parameters)?;
+    for reading_clause in &mut query.post_with_reading_clauses {
+        substitute_in_reading_clause(reading_clause, parameters)?;
     }
 
     // Substitute in post-WITH WHERE clause
