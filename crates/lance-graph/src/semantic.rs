@@ -915,39 +915,29 @@ impl SemanticAnalyzer {
                     location: snafu::Location::new(file!(), line!(), column!()),
                 })?;
 
-                match self.json_to_property_value(param_value)? {
-                    // Try to convert to VectorLiteral if it's an array of numbers
-                    // Since PropertyValue doesn't support generic lists yet, strict JSON array -> PropertyValue
-                    // will likely fail or return Null/String. But we want to support VectorLiteral.
-                    // Let's rely on json_to_property_value first.
-                    // Wait, PropertyValue doesn't have VectorLiteral. ValueExpression does.
-                    // We need a way to convert JSON array to VectorLiteral.
-                    _ => {
-                        // Check for array to VectorLiteral conversion
-                        if let serde_json::Value::Array(arr) = param_value {
-                            let mut floats = Vec::new();
-                            for v in arr {
-                                if let Some(f) = v.as_f64() {
-                                    floats.push(f as f32);
-                                } else {
-                                    return Err(GraphError::PlanError {
-                                        message: format!(
-                                            "Parameter ${} is a list but contains non-numeric values. Only float vectors are supported as list parameters currently.",
-                                            name
-                                        ),
-                                        location: snafu::Location::new(file!(), line!(), column!()),
-                                    });
-                                }
-                            }
-                            *expr = ValueExpression::VectorLiteral(floats);
-                            return Ok(());
+                // Check for array to VectorLiteral conversion
+                if let serde_json::Value::Array(arr) = param_value {
+                    let mut floats = Vec::new();
+                    for v in arr {
+                        if let Some(f) = v.as_f64() {
+                            floats.push(f as f32);
+                        } else {
+                            return Err(GraphError::PlanError {
+                                message: format!(
+                                    "Parameter ${} is a list but contains non-numeric values. Only float vectors are supported as list parameters currently.",
+                                    name
+                                ),
+                                location: snafu::Location::new(file!(), line!(), column!()),
+                            });
                         }
-
-                        // Scalar conversion
-                        let prop_val = self.json_to_property_value(param_value)?;
-                        *expr = ValueExpression::Literal(prop_val);
                     }
+                    *expr = ValueExpression::VectorLiteral(floats);
+                    return Ok(());
                 }
+
+                // Scalar conversion
+                let prop_val = self.json_to_property_value(param_value)?;
+                *expr = ValueExpression::Literal(prop_val);
             }
             ValueExpression::ScalarFunction { args, .. }
             | ValueExpression::AggregateFunction { args, .. } => {
