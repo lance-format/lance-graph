@@ -43,6 +43,8 @@ pub mod error;
 pub mod lance_native_planner;
 pub mod lance_vector_search;
 pub mod logical_plan;
+pub mod namespace;
+pub mod parameter_substitution;
 pub mod parser;
 pub mod query;
 pub mod semantic;

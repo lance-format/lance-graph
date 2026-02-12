@@ -242,4 +242,3 @@ def test_cypher_parameter_syntax(graph_env):
     # Should get Alice (28), Carol (29), Bob (34)
     # David is 42 (excluded)
     assert set(data["p.name"]) == {"Alice", "Carol", "Bob"}
-
