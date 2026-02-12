@@ -21,6 +21,7 @@ impl DataFusionPlanner {
     /// Build a qualified node scan with property filters and column aliasing
     pub(crate) fn build_scan(
         &self,
+        _ctx: &PlanningContext,
         variable: &str,
         label: &str,
         properties: &HashMap<String, PropertyValue>,

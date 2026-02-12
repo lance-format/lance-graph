@@ -166,6 +166,3 @@ def test_cypher_engine_config_access(graph_env):
 
     assert "person" in engine_config.node_labels()  # case-insensitive
     assert "company" in engine_config.node_labels()
-
-
-

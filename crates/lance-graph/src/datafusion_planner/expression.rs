@@ -19,26 +19,6 @@ use datafusion_functions_aggregate::min_max::max;
 use datafusion_functions_aggregate::min_max::min;
 use datafusion_functions_aggregate::sum::sum;
 
-/// Helper function to convert serde_json::Value to DataFusion ScalarValue
-fn json_to_scalar(value: &serde_json::Value) -> datafusion::scalar::ScalarValue {
-    use datafusion::scalar::ScalarValue;
-    match value {
-        serde_json::Value::Null => ScalarValue::Null,
-        serde_json::Value::Bool(b) => ScalarValue::Boolean(Some(*b)),
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                ScalarValue::Int64(Some(i))
-            } else if let Some(f) = n.as_f64() {
-                ScalarValue::Float64(Some(f))
-            } else {
-                ScalarValue::Null
-            }
-        }
-        serde_json::Value::String(s) => ScalarValue::Utf8(Some(s.clone())),
-        serde_json::Value::Array(_) | serde_json::Value::Object(_) => ScalarValue::Null, // Complex types not supported yet
-    }
-}
-
 /// Helper function to create LIKE expressions with consistent settings
 fn create_like_expr(expression: &ValueExpression, pattern: &str, case_insensitive: bool) -> Expr {
     Expr::Like(datafusion::logical_expr::Like {
@@ -78,7 +58,7 @@ pub(crate) fn to_df_boolean_expr(expr: &BooleanExpression) -> Expr {
         BE::In { expression, list } => {
             use datafusion::logical_expr::expr::InList as DFInList;
             let expr = to_df_value_expr(expression);
-            let list_exprs = list.iter().map(|e| to_df_value_expr(e)).collect::<Vec<_>>();
+            let list_exprs = list.iter().map(to_df_value_expr).collect::<Vec<_>>();
             Expr::InList(DFInList::new(Box::new(expr), list_exprs, false))
         }
         BE::And(l, r) => Expr::BinaryExpr(BinaryExpr {

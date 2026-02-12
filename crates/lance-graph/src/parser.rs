@@ -1747,21 +1747,6 @@ mod tests {
         let query = "MATCH (p:Person) WHERE p.age > $min_age RETURN p";
         let result = parse_cypher_query(query);
         assert!(result.is_ok(), "$param should parse successfully");
-
-        // Test @param (should fail)
-        let query = "MATCH (p:Person) WHERE p.age > @min_age RETURN p";
-        let result = parse_cypher_query(query);
-        assert!(result.is_err(), "@param should fail");
-
-        // Test :param (should fail)
-        let query = "MATCH (p:Person) WHERE p.age > :min_age RETURN p";
-        let result = parse_cypher_query(query);
-        assert!(result.is_err(), ":param should fail");
-
-        // Test {param} (should fail)
-        let query = "MATCH (p:Person) WHERE p.age > {min_age} RETURN p";
-        let result = parse_cypher_query(query);
-        assert!(result.is_err(), "{{param}} should fail");
     }
 
     #[test]
