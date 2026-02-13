@@ -54,7 +54,7 @@ Suggested Migration Steps
 3. Split the planner (`Cypher -> LogicalPlan`) into `lance-graph-planner`.
 4. Refactor the Simple executor so it lives in the workspace cleanly (either
    inside the facade crate or as a `lance-graph-simple` crate).
-5. Update `python/Cargo.toml` to depend on the workspace crates.
+5. Update `crates/lance-graph-python/Cargo.toml` to depend on the workspace crates.
 6. Add ADRs for each step under `docs/` to document tradeoffs.
 7. Update GitHub workflows to match the new workspace paths (build, test,
    release/publish), otherwise releases will fail.

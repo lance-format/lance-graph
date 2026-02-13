@@ -22,7 +22,7 @@ lint:
 
 clean:
 	rm -rf .venv
-	rm -rf target
+	rm -rf ../target
 
 publish:
-	maturin build --release --out dist --sdist
+	maturin build --release --out dist --sdist -m ../crates/lance-graph-python/Cargo.toml

@@ -121,7 +121,7 @@ jobs:
       if: inputs.release_type != 'current'
       run: |
         cargo check --manifest-path crates/lance-graph/Cargo.toml
-        cargo check --manifest-path python/Cargo.toml
+        cargo check --manifest-path crates/lance-graph-python/Cargo.toml
 
     - name: Create release commit (when version changes)
       if: inputs.release_type != 'current'

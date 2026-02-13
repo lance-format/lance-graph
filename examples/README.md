@@ -9,7 +9,7 @@ Pick one of the two approaches:
 ```bash
 # From the repo root; installs the Python extension in editable mode
 pip install pyarrow  # or: uv pip install pyarrow
-maturin develop -m python/Cargo.toml
+maturin develop -m crates/lance-graph-python/Cargo.toml
 
 # Run examples
 python examples/basic_cypher.py
@@ -24,7 +24,7 @@ uv venv .venv && . .venv/bin/activate
 
 # Install dependencies and build editable extension
 uv pip install pyarrow
-uvx --from maturin maturin develop -m python/Cargo.toml
+uvx --from maturin maturin develop -m crates/lance-graph-python/Cargo.toml
 
 # Run examples using the venv's Python
 python examples/basic_cypher.py

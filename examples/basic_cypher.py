@@ -3,7 +3,7 @@ Basic Cypher graph query using the lance-graph Python bindings.
 
 Requirements:
 - Build/install the Python extension first (from repo root):
-  maturin develop -m python/Cargo.toml
+  maturin develop -m crates/lance-graph-python/Cargo.toml
 - Python deps: pyarrow
 
 Run:

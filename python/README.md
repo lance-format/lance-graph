@@ -220,7 +220,7 @@ maturin develop
 
 ## Repository layout
 
-- `python/src/` – PyO3 bridge that exposes graph APIs to Python
+- `crates/lance-graph-python/src/` – PyO3 bridge that exposes graph APIs to Python
 - `python/python/lance_graph/` – pure-Python wrapper and `__init__`
 - `python/python/knowledge_graph/` – CLI, FastAPI, and extractor utilities built on Lance
 - `python/python/tests/` – graph-centric functional tests

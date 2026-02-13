@@ -39,6 +39,7 @@ classifiers = [
 [tool.maturin]
 python-source = "python"
 python-packages = ["lance_graph", "knowledge_graph"]
+manifest-path = "../crates/lance-graph-python/Cargo.toml"
 
 [build-system]
 requires = ["maturin>=1.4"]

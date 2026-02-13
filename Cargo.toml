@@ -2,8 +2,6 @@
 members = [
     "crates/lance-graph",
     "crates/lance-graph-catalog",
-]
-exclude = [
-    "python",
+    "crates/lance-graph-python",
 ]
 resolver = "2"

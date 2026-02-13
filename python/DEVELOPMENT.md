@@ -3,7 +3,10 @@
 ## Building the project
 
 This project is built with [maturin](https://github.com/PyO3/maturin) and uses
-[uv](https://docs.astral.sh/uv/) to manage a local virtual environment.
+[uv](https://docs.astral.sh/uv/) to manage a local virtual environment. The Rust
+extension crate now lives at `crates/lance-graph-python/`; `pyproject.toml`
+already points maturin at that manifest, so `maturin develop` from `python/`
+continues to work.
 
 Recommended uv workflow:
 
