@@ -5101,3 +5101,52 @@ async fn test_datafusion_variable_reuse_multi_pattern_optimization() {
         person_scan_count
     );
 }
+
+#[tokio::test]
+async fn test_datafusion_parameter_filtering_age() {
+    let config = create_graph_config();
+    let person_batch = create_person_dataset();
+
+    let mut params = HashMap::new();
+    // Filter for people older than 30 (Bob:35, David:40)
+    params.insert("min_age".to_string(), serde_json::json!(30));
+
+    let query = CypherQuery::new("MATCH (p:Person) WHERE p.age > $min_age RETURN p.name, p.age")
+        .unwrap()
+        .with_config(config)
+        .with_parameters(params);
+
+    let mut datasets = HashMap::new();
+    datasets.insert("Person".to_string(), person_batch);
+
+    let result = query
+        .execute(datasets, Some(ExecutionStrategy::DataFusion))
+        .await
+        .unwrap();
+
+    // Should return 2 people (Bob:35, David:40)
+    assert_eq!(result.num_rows(), 2);
+    assert_eq!(result.num_columns(), 2);
+
+    let names = result
+        .column(0)
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .unwrap();
+    let ages = result
+        .column(1)
+        .as_any()
+        .downcast_ref::<Int64Array>()
+        .unwrap();
+
+    let mut results = Vec::new();
+    for i in 0..result.num_rows() {
+        results.push((names.value(i).to_string(), ages.value(i)));
+    }
+
+    results.sort();
+    assert_eq!(
+        results,
+        vec![("Bob".to_string(), 35), ("David".to_string(), 40)]
+    );
+}
