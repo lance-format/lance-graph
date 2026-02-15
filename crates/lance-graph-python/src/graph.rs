@@ -107,10 +107,8 @@ impl From<DistanceMetric> for RustDistanceMetric {
 #[derive(Clone)]
 pub struct VectorSearch {
     inner: RustVectorSearch,
-    column: String,
-    query_vector: Option<Vec<f32>>,
-    metric: DistanceMetric,
-    top_k: usize,
+    /// Flag to enable vector-first Lance ANN execution path.
+    /// This is stored separately because RustVectorSearch doesn't have this concept.
     use_lance_index: bool,
 }
 
@@ -131,10 +129,6 @@ impl VectorSearch {
     fn new(column: &str) -> Self {
         Self {
             inner: RustVectorSearch::new(column),
-            column: column.to_string(),
-            query_vector: None,
-            metric: DistanceMetric::L2,
-            top_k: 10,
             use_lance_index: false,
         }
     }
@@ -153,10 +147,6 @@ impl VectorSearch {
     fn query_vector(&self, vector: Vec<f32>) -> Self {
         Self {
             inner: self.inner.clone().query_vector(vector),
-            column: self.column.clone(),
-            query_vector: Some(vector),
-            metric: self.metric,
-            top_k: self.top_k,
             use_lance_index: self.use_lance_index,
         }
     }
@@ -175,10 +165,6 @@ impl VectorSearch {
     fn metric(&self, metric: DistanceMetric) -> Self {
         Self {
             inner: self.inner.clone().metric(metric.into()),
-            column: self.column.clone(),
-            query_vector: self.query_vector.clone(),
-            metric,
-            top_k: self.top_k,
             use_lance_index: self.use_lance_index,
         }
     }
@@ -197,10 +183,6 @@ impl VectorSearch {
     fn top_k(&self, k: usize) -> Self {
         Self {
             inner: self.inner.clone().top_k(k),
-            column: self.column.clone(),
-            query_vector: self.query_vector.clone(),
-            metric: self.metric,
-            top_k: k,
             use_lance_index: self.use_lance_index,
         }
     }
@@ -219,10 +201,6 @@ impl VectorSearch {
     fn include_distance(&self, include: bool) -> Self {
         Self {
             inner: self.inner.clone().include_distance(include),
-            column: self.column.clone(),
-            query_vector: self.query_vector.clone(),
-            metric: self.metric,
-            top_k: self.top_k,
             use_lance_index: self.use_lance_index,
         }
     }
@@ -241,10 +219,6 @@ impl VectorSearch {
     fn distance_column_name(&self, name: &str) -> Self {
         Self {
             inner: self.inner.clone().distance_column_name(name),
-            column: self.column.clone(),
-            query_vector: self.query_vector.clone(),
-            metric: self.metric,
-            top_k: self.top_k,
             use_lance_index: self.use_lance_index,
         }
     }
@@ -268,10 +242,6 @@ impl VectorSearch {
     fn use_lance_index(&self, enabled: bool) -> Self {
         Self {
             inner: self.inner.clone(),
-            column: self.column.clone(),
-            query_vector: self.query_vector.clone(),
-            metric: self.metric,
-            top_k: self.top_k,
             use_lance_index: enabled,
         }
     }
@@ -813,25 +783,24 @@ fn json_to_python(py: Python, value: &JsonValue) -> PyResult<PyObject> {
 }
 
 // Helper functions for Arrow conversion
+
+/// Convert a single Python dataset value to a RecordBatch
+fn python_dataset_to_batch(value: &Bound<'_, PyAny>) -> PyResult<RecordBatch> {
+    let batch = if is_lance_dataset(value)? {
+        lance_dataset_to_record_batch(value)?
+    } else if value.hasattr("to_table")? {
+        let table = value.call_method0("to_table")?;
+        python_any_to_record_batch(&table)?
+    } else {
+        python_any_to_record_batch(value)?
+    };
+    normalize_record_batch(batch)
+}
+
 fn python_datasets_to_batches(
     datasets: &Bound<'_, PyDict>,
 ) -> PyResult<HashMap<String, RecordBatch>> {
-    let mut arrow_datasets = HashMap::new();
-    for (key, value) in datasets.iter() {
-        let table_name: String = key.extract()?;
-        let batch = if is_lance_dataset(&value)? {
-            // Handle Lance datasets using scan() -> to_pyarrow() pattern that works elsewhere
-            lance_dataset_to_record_batch(&value)?
-        } else if value.hasattr("to_table")? {
-            let table = value.call_method0("to_table")?;
-            python_any_to_record_batch(&table)?
-        } else {
-            python_any_to_record_batch(&value)?
-        };
-        let batch = normalize_record_batch(batch)?;
-        arrow_datasets.insert(table_name, batch);
-    }
-    Ok(arrow_datasets)
+    python_datasets_to_batches_impl(datasets, None)
 }
 
 fn python_datasets_to_batches_with_override(
@@ -839,22 +808,26 @@ fn python_datasets_to_batches_with_override(
     override_label: &str,
     override_batch: &RecordBatch,
 ) -> PyResult<HashMap<String, RecordBatch>> {
+    python_datasets_to_batches_impl(datasets, Some((override_label, override_batch)))
+}
+
+fn python_datasets_to_batches_impl(
+    datasets: &Bound<'_, PyDict>,
+    override_entry: Option<(&str, &RecordBatch)>,
+) -> PyResult<HashMap<String, RecordBatch>> {
     let mut arrow_datasets = HashMap::new();
     for (key, value) in datasets.iter() {
         let table_name: String = key.extract()?;
-        if table_name == override_label {
-            arrow_datasets.insert(table_name, override_batch.clone());
-            continue;
+
+        // Check if this table should use the override batch
+        if let Some((override_label, override_batch)) = override_entry {
+            if table_name == override_label {
+                arrow_datasets.insert(table_name, override_batch.clone());
+                continue;
+            }
         }
-        let batch = if is_lance_dataset(&value)? {
-            lance_dataset_to_record_batch(&value)?
-        } else if value.hasattr("to_table")? {
-            let table = value.call_method0("to_table")?;
-            python_any_to_record_batch(&table)?
-        } else {
-            python_any_to_record_batch(&value)?
-        };
-        let batch = normalize_record_batch(batch)?;
+
+        let batch = python_dataset_to_batch(&value)?;
         arrow_datasets.insert(table_name, batch);
     }
     Ok(arrow_datasets)
@@ -866,6 +839,8 @@ fn try_execute_with_lance_index(
     datasets: &Bound<'_, PyDict>,
     vector_search: &VectorSearch,
 ) -> PyResult<Option<RecordBatch>> {
+    // Only use vector-first path for simple queries without filters.
+    // Queries with WITH/WHERE clauses need the standard rerank path to ensure correct semantics.
     let ast = query.ast();
     if ast.with_clause.is_some()
         || ast.where_clause.is_some()
@@ -874,8 +849,8 @@ fn try_execute_with_lance_index(
         return Ok(None);
     }
 
-    let query_vector = match vector_search.query_vector.as_ref() {
-        Some(vec) => vec.clone(),
+    let query_vector = match vector_search.inner.get_query_vector() {
+        Some(vec) => vec.to_vec(),
         None => {
             return Err(PyValueError::new_err(
                 "VectorSearch.query_vector is required when use_lance_index is enabled",
@@ -883,7 +858,7 @@ fn try_execute_with_lance_index(
         }
     };
 
-    let (alias, column) = split_vector_column(&vector_search.column);
+    let (alias, column) = split_vector_column(vector_search.inner.column());
     let label = resolve_vector_label(query, alias.as_deref())?;
     let label = match label {
         Some(label) => label,
@@ -899,15 +874,18 @@ fn try_execute_with_lance_index(
         return Ok(None);
     }
 
-    let metric_str = match vector_search.metric {
-        DistanceMetric::L2 => "l2",
-        DistanceMetric::Cosine => "cosine",
-        DistanceMetric::Dot => "dot",
+    let metric_str = match vector_search.inner.get_metric() {
+        RustDistanceMetric::L2 => "l2",
+        RustDistanceMetric::Cosine => "cosine",
+        RustDistanceMetric::Dot => "dot",
     };
 
+    // Build the `nearest` dict for Lance's to_table() ANN query.
+    // Setting use_index=true tells Lance to use the ANN index if available,
+    // otherwise it falls back to flat (brute-force) search.
     let nearest = PyDict::new(py);
     nearest.set_item("column", column)?;
-    nearest.set_item("k", vector_search.top_k)?;
+    nearest.set_item("k", vector_search.inner.get_top_k())?;
     nearest.set_item("q", query_vector)?;
     nearest.set_item("metric", metric_str)?;
     nearest.set_item("use_index", true)?;
@@ -915,7 +893,7 @@ fn try_execute_with_lance_index(
     let kwargs = PyDict::new(py);
     kwargs.set_item("nearest", nearest)?;
 
-    let table = dataset_value.call_method("to_table", (), Some(kwargs))?;
+    let table = dataset_value.call_method("to_table", (), Some(&kwargs))?;
     let batch = python_any_to_record_batch(&table)?;
     let batch = normalize_record_batch(batch)?;
 

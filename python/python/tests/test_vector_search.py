@@ -183,13 +183,48 @@ def test_execute_with_vector_rerank_basic(vector_env):
 
 @pytest.mark.requires_lance
 def test_execute_with_vector_rerank_lance_index(vector_env, tmp_path):
-    """Test vector-first execution using Lance datasets."""
-    config, datasets, _ = vector_env
+    """Test vector-first execution using Lance datasets.
+
+    Note: This test does NOT create an actual vector index on the Lance dataset.
+    Lance will fall back to flat (brute-force) search when use_index=True is set
+    but no index exists. This test validates:
+    1. The code path for the vector-first execution is exercised
+    2. Results are correct (matching the standard rerank behavior)
+    3. The Lance dataset integration works end-to-end
+
+    To test actual ANN index behavior, create an index with:
+        lance_dataset.create_index("embedding", index_type="IVF_PQ", ...)
+    """
+    config, _, _ = vector_env
 
     import lance
+    import numpy as np
+
+    # Create embeddings with fixed-size list type (required for Lance vector search)
+    embedding_values = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.5, 0.5, 0.0],
+        ],
+        dtype=np.float32,
+    )
+
+    documents_table = pa.table(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "name": ["Doc1", "Doc2", "Doc3", "Doc4", "Doc5"],
+            "category": ["tech", "tech", "science", "tech", "science"],
+            "embedding": pa.FixedSizeListArray.from_arrays(
+                embedding_values.flatten(), list_size=3
+            ),
+        }
+    )
 
     dataset_path = tmp_path / "Document.lance"
-    lance.write_dataset(datasets["Document"], dataset_path)
+    lance.write_dataset(documents_table, dataset_path)
     lance_dataset = lance.dataset(str(dataset_path))
 
     query = CypherQuery(
@@ -209,6 +244,71 @@ def test_execute_with_vector_rerank_lance_index(vector_env, tmp_path):
     assert len(data["d.name"]) == 3
     assert data["d.name"][0] == "Doc1"
     assert data["d.name"][1] == "Doc2"
+
+
+@pytest.mark.requires_lance
+def test_execute_with_vector_rerank_lance_index_fallback_on_where(vector_env, tmp_path):
+    """Test that use_lance_index falls back to standard rerank with WHERE clause.
+
+    When a Cypher query includes filters (WHERE clause), the vector-first path would
+    change semantics: it would search ALL vectors first, then apply filters. This could
+    miss relevant results that match the filter but aren't in the top-k vectors.
+
+    The implementation correctly detects this and falls back to the standard
+    candidate-then-rerank path.
+    """
+    config, _, _ = vector_env
+
+    import lance
+    import numpy as np
+
+    # Create embeddings with fixed-size list type (required for Lance vector search)
+    embedding_values = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.5, 0.5, 0.0],
+        ],
+        dtype=np.float32,
+    )
+
+    documents_table = pa.table(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "name": ["Doc1", "Doc2", "Doc3", "Doc4", "Doc5"],
+            "category": ["tech", "tech", "science", "tech", "science"],
+            "embedding": pa.FixedSizeListArray.from_arrays(
+                embedding_values.flatten(), list_size=3
+            ),
+        }
+    )
+
+    dataset_path = tmp_path / "Document.lance"
+    lance.write_dataset(documents_table, dataset_path)
+    lance_dataset = lance.dataset(str(dataset_path))
+
+    # Query WITH a WHERE clause - should fall back to standard rerank
+    query = CypherQuery(
+        "MATCH (d:Document) WHERE d.category = 'tech' RETURN d.id, d.name, d.embedding"
+    ).with_config(config)
+
+    results = query.execute_with_vector_rerank(
+        {"Document": lance_dataset},
+        VectorSearch("d.embedding")
+        .query_vector([1.0, 0.0, 0.0])
+        .metric(DistanceMetric.L2)
+        .top_k(3)
+        .use_lance_index(True),  # This will be ignored due to WHERE clause
+    )
+
+    data = results.to_pydict()
+    # Should only have tech documents (Doc1, Doc2, Doc4), not science docs
+    assert len(data["d.name"]) == 3
+    assert all(name in ["Doc1", "Doc2", "Doc4"] for name in data["d.name"])
+    # Doc1 should still be first (closest to [1,0,0])
+    assert data["d.name"][0] == "Doc1"
 
 
 def test_execute_with_vector_rerank_filtered(vector_env):

@@ -125,6 +125,28 @@ impl VectorSearch {
         self
     }
 
+    // Getters for accessing internal state (used by Python bindings)
+
+    /// Get the column name
+    pub fn column(&self) -> &str {
+        &self.column
+    }
+
+    /// Get the query vector if set
+    pub fn get_query_vector(&self) -> Option<&[f32]> {
+        self.query_vector.as_deref()
+    }
+
+    /// Get the distance metric
+    pub fn get_metric(&self) -> &DistanceMetric {
+        &self.metric
+    }
+
+    /// Get the top_k value
+    pub fn get_top_k(&self) -> usize {
+        self.top_k
+    }
+
     /// Perform brute-force vector search on a RecordBatch
     ///
     /// This method computes distances for all vectors in the batch and returns
