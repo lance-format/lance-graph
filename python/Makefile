@@ -25,4 +25,4 @@ clean:
 	rm -rf ../target
 
 publish:
-	maturin build --release --out dist --sdist -m ../crates/lance-graph-python/Cargo.toml
+	maturin build --release --out dist --sdist
