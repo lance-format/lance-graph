@@ -181,6 +181,36 @@ def test_execute_with_vector_rerank_basic(vector_env):
     assert data["d.name"][1] == "Doc2"
 
 
+@pytest.mark.requires_lance
+def test_execute_with_vector_rerank_lance_index(vector_env, tmp_path):
+    """Test vector-first execution using Lance datasets."""
+    config, datasets, _ = vector_env
+
+    import lance
+
+    dataset_path = tmp_path / "Document.lance"
+    lance.write_dataset(datasets["Document"], dataset_path)
+    lance_dataset = lance.dataset(str(dataset_path))
+
+    query = CypherQuery(
+        "MATCH (d:Document) RETURN d.id, d.name, d.embedding"
+    ).with_config(config)
+
+    results = query.execute_with_vector_rerank(
+        {"Document": lance_dataset},
+        VectorSearch("d.embedding")
+        .query_vector([1.0, 0.0, 0.0])
+        .metric(DistanceMetric.L2)
+        .top_k(3)
+        .use_lance_index(True),
+    )
+
+    data = results.to_pydict()
+    assert len(data["d.name"]) == 3
+    assert data["d.name"][0] == "Doc1"
+    assert data["d.name"][1] == "Doc2"
+
+
 def test_execute_with_vector_rerank_filtered(vector_env):
     """Test Cypher filter + vector rerank."""
     config, datasets, _ = vector_env

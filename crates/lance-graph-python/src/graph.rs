@@ -24,9 +24,10 @@ use arrow_schema::Schema;
 use datafusion::datasource::{DefaultTableSource, MemTable};
 use datafusion::execution::context::SessionContext;
 use lance_graph::{
-    ast::DistanceMetric as RustDistanceMetric, CypherQuery as RustCypherQuery,
-    ExecutionStrategy as RustExecutionStrategy, GraphConfig as RustGraphConfig,
-    GraphError as RustGraphError, VectorSearch as RustVectorSearch, InMemoryCatalog,
+    ast::{DistanceMetric as RustDistanceMetric, GraphPattern, ReadingClause},
+    CypherQuery as RustCypherQuery, ExecutionStrategy as RustExecutionStrategy,
+    GraphConfig as RustGraphConfig, GraphError as RustGraphError, InMemoryCatalog,
+    VectorSearch as RustVectorSearch,
 };
 use pyo3::{
     exceptions::{PyNotImplementedError, PyRuntimeError, PyValueError},
@@ -106,6 +107,11 @@ impl From<DistanceMetric> for RustDistanceMetric {
 #[derive(Clone)]
 pub struct VectorSearch {
     inner: RustVectorSearch,
+    column: String,
+    query_vector: Option<Vec<f32>>,
+    metric: DistanceMetric,
+    top_k: usize,
+    use_lance_index: bool,
 }
 
 #[pymethods]
@@ -125,6 +131,11 @@ impl VectorSearch {
     fn new(column: &str) -> Self {
         Self {
             inner: RustVectorSearch::new(column),
+            column: column.to_string(),
+            query_vector: None,
+            metric: DistanceMetric::L2,
+            top_k: 10,
+            use_lance_index: false,
         }
     }
 
@@ -142,6 +153,11 @@ impl VectorSearch {
     fn query_vector(&self, vector: Vec<f32>) -> Self {
         Self {
             inner: self.inner.clone().query_vector(vector),
+            column: self.column.clone(),
+            query_vector: Some(vector),
+            metric: self.metric,
+            top_k: self.top_k,
+            use_lance_index: self.use_lance_index,
         }
     }
 
@@ -159,6 +175,11 @@ impl VectorSearch {
     fn metric(&self, metric: DistanceMetric) -> Self {
         Self {
             inner: self.inner.clone().metric(metric.into()),
+            column: self.column.clone(),
+            query_vector: self.query_vector.clone(),
+            metric,
+            top_k: self.top_k,
+            use_lance_index: self.use_lance_index,
         }
     }
 
@@ -176,6 +197,11 @@ impl VectorSearch {
     fn top_k(&self, k: usize) -> Self {
         Self {
             inner: self.inner.clone().top_k(k),
+            column: self.column.clone(),
+            query_vector: self.query_vector.clone(),
+            metric: self.metric,
+            top_k: k,
+            use_lance_index: self.use_lance_index,
         }
     }
 
@@ -193,6 +219,11 @@ impl VectorSearch {
     fn include_distance(&self, include: bool) -> Self {
         Self {
             inner: self.inner.clone().include_distance(include),
+            column: self.column.clone(),
+            query_vector: self.query_vector.clone(),
+            metric: self.metric,
+            top_k: self.top_k,
+            use_lance_index: self.use_lance_index,
         }
     }
 
@@ -210,6 +241,38 @@ impl VectorSearch {
     fn distance_column_name(&self, name: &str) -> Self {
         Self {
             inner: self.inner.clone().distance_column_name(name),
+            column: self.column.clone(),
+            query_vector: self.query_vector.clone(),
+            metric: self.metric,
+            top_k: self.top_k,
+            use_lance_index: self.use_lance_index,
+        }
+    }
+
+    /// Use Lance ANN index when datasets are Lance datasets.
+    ///
+    /// This enables a vector-first execution path that queries the Lance index
+    /// and then runs the Cypher query on the top-k results. This can be much faster
+    /// for large datasets but may change semantics when the Cypher query includes
+    /// filters or additional constraints.
+    ///
+    /// Parameters
+    /// ----------
+    /// enabled : bool
+    ///     If True, use Lance ANN index for vector search when possible.
+    ///
+    /// Returns
+    /// -------
+    /// VectorSearch
+    ///     A new builder with the setting applied
+    fn use_lance_index(&self, enabled: bool) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            column: self.column.clone(),
+            query_vector: self.query_vector.clone(),
+            metric: self.metric,
+            top_k: self.top_k,
+            use_lance_index: enabled,
         }
     }
 
@@ -640,6 +703,8 @@ impl CypherQuery {
     ///     Dictionary mapping table names to Lance datasets or PyArrow tables
     /// vector_search : VectorSearch
     ///     VectorSearch configuration for reranking
+    ///     (Use VectorSearch.use_lance_index(True) to enable a vector-first
+    ///     execution path when datasets are Lance datasets.)
     ///
     /// Returns
     /// -------
@@ -674,6 +739,12 @@ impl CypherQuery {
         datasets: &Bound<'_, PyDict>,
         vector_search: &VectorSearch,
     ) -> PyResult<PyObject> {
+        if vector_search.use_lance_index {
+            if let Some(result) = try_execute_with_lance_index(py, &self.inner, datasets, vector_search)? {
+                return record_batch_to_python_table(py, &result);
+            }
+        }
+
         // Convert datasets to Arrow batches
         let arrow_datasets = python_datasets_to_batches(datasets)?;
 
@@ -761,6 +832,162 @@ fn python_datasets_to_batches(
         arrow_datasets.insert(table_name, batch);
     }
     Ok(arrow_datasets)
+}
+
+fn python_datasets_to_batches_with_override(
+    datasets: &Bound<'_, PyDict>,
+    override_label: &str,
+    override_batch: &RecordBatch,
+) -> PyResult<HashMap<String, RecordBatch>> {
+    let mut arrow_datasets = HashMap::new();
+    for (key, value) in datasets.iter() {
+        let table_name: String = key.extract()?;
+        if table_name == override_label {
+            arrow_datasets.insert(table_name, override_batch.clone());
+            continue;
+        }
+        let batch = if is_lance_dataset(&value)? {
+            lance_dataset_to_record_batch(&value)?
+        } else if value.hasattr("to_table")? {
+            let table = value.call_method0("to_table")?;
+            python_any_to_record_batch(&table)?
+        } else {
+            python_any_to_record_batch(&value)?
+        };
+        let batch = normalize_record_batch(batch)?;
+        arrow_datasets.insert(table_name, batch);
+    }
+    Ok(arrow_datasets)
+}
+
+fn try_execute_with_lance_index(
+    py: Python,
+    query: &RustCypherQuery,
+    datasets: &Bound<'_, PyDict>,
+    vector_search: &VectorSearch,
+) -> PyResult<Option<RecordBatch>> {
+    let ast = query.ast();
+    if ast.with_clause.is_some()
+        || ast.where_clause.is_some()
+        || ast.post_with_where_clause.is_some()
+    {
+        return Ok(None);
+    }
+
+    let query_vector = match vector_search.query_vector.as_ref() {
+        Some(vec) => vec.clone(),
+        None => {
+            return Err(PyValueError::new_err(
+                "VectorSearch.query_vector is required when use_lance_index is enabled",
+            ))
+        }
+    };
+
+    let (alias, column) = split_vector_column(&vector_search.column);
+    let label = resolve_vector_label(query, alias.as_deref())?;
+    let label = match label {
+        Some(label) => label,
+        None => return Ok(None),
+    };
+
+    let dataset_value = match datasets.get_item(&label)? {
+        Some(value) => value,
+        None => return Ok(None),
+    };
+
+    if !is_lance_dataset(&dataset_value)? {
+        return Ok(None);
+    }
+
+    let metric_str = match vector_search.metric {
+        DistanceMetric::L2 => "l2",
+        DistanceMetric::Cosine => "cosine",
+        DistanceMetric::Dot => "dot",
+    };
+
+    let nearest = PyDict::new(py);
+    nearest.set_item("column", column)?;
+    nearest.set_item("k", vector_search.top_k)?;
+    nearest.set_item("q", query_vector)?;
+    nearest.set_item("metric", metric_str)?;
+    nearest.set_item("use_index", true)?;
+
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("nearest", nearest)?;
+
+    let table = dataset_value.call_method("to_table", (), Some(kwargs))?;
+    let batch = python_any_to_record_batch(&table)?;
+    let batch = normalize_record_batch(batch)?;
+
+    let arrow_datasets = python_datasets_to_batches_with_override(datasets, &label, &batch)?;
+
+    let inner_query = query.clone();
+    let result = RT
+        .block_on(Some(py), inner_query.execute(arrow_datasets, None))?
+        .map_err(graph_error_to_pyerr)?;
+
+    Ok(Some(result))
+}
+
+fn split_vector_column(column: &str) -> (Option<String>, &str) {
+    let mut parts = column.splitn(2, '.');
+    let first = parts.next().unwrap_or(column);
+    if let Some(rest) = parts.next() {
+        (Some(first.to_string()), rest)
+    } else {
+        (None, column)
+    }
+}
+
+fn resolve_vector_label(
+    query: &RustCypherQuery,
+    alias: Option<&str>,
+) -> PyResult<Option<String>> {
+    let alias_map = alias_map_from_query(query);
+    if let Some(alias) = alias {
+        return Ok(alias_map.get(alias).cloned());
+    }
+    if alias_map.len() == 1 {
+        return Ok(alias_map.values().next().cloned());
+    }
+    Ok(None)
+}
+
+fn alias_map_from_query(query: &RustCypherQuery) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let ast = query.ast();
+    for clause in ast
+        .reading_clauses
+        .iter()
+        .chain(ast.post_with_reading_clauses.iter())
+    {
+        if let ReadingClause::Match(match_clause) = clause {
+            for pattern in &match_clause.patterns {
+                collect_aliases_from_pattern(pattern, &mut map);
+            }
+        }
+    }
+    map
+}
+
+fn collect_aliases_from_pattern(pattern: &GraphPattern, map: &mut HashMap<String, String>) {
+    match pattern {
+        GraphPattern::Node(node) => {
+            if let (Some(var), Some(label)) = (node.variable.as_ref(), node.labels.first()) {
+                map.entry(var.clone()).or_insert_with(|| label.clone());
+            }
+        }
+        GraphPattern::Path(path) => {
+            if let (Some(var), Some(label)) = (path.start_node.variable.as_ref(), path.start_node.labels.first()) {
+                map.entry(var.clone()).or_insert_with(|| label.clone());
+            }
+            for segment in &path.segments {
+                if let (Some(var), Some(label)) = (segment.end_node.variable.as_ref(), segment.end_node.labels.first()) {
+                    map.entry(var.clone()).or_insert_with(|| label.clone());
+                }
+            }
+        }
+    }
 }
 
 fn normalize_record_batch(batch: RecordBatch) -> PyResult<RecordBatch> {
