@@ -1056,6 +1056,50 @@ impl CypherEngine {
         }
     }
 
+    /// Execute Cypher query with vector reranking
+    ///
+    /// Convenience method combining graph traversal and vector similarity ranking.
+    /// See CypherQuery.execute_with_vector_rerank for detailed documentation.
+    ///
+    /// Parameters
+    /// ----------
+    /// query : str
+    ///     Cypher query string
+    /// vector_search : VectorSearch
+    ///     Vector search configuration
+    ///
+    /// Returns
+    /// -------
+    /// pyarrow.Table
+    ///     Results sorted by vector similarity
+    fn execute_with_vector_rerank(
+        &self,
+        py: Python,
+        query: &str,
+        vector_search: &VectorSearch,
+    ) -> PyResult<PyObject> {
+        // Parse query and execute with cached catalog/context
+        let cypher_query = RustCypherQuery::new(query)
+            .map_err(graph_error_to_pyerr)?
+            .with_config(self.config.clone());
+
+        let catalog = self.catalog.clone();
+        let context = self.context.as_ref().clone();
+        let vs = vector_search.inner.clone();
+
+        // Execute query to get candidates, then apply vector reranking
+        let result_batch = RT
+            .block_on(Some(py), async move {
+                let candidates = cypher_query
+                    .execute_with_catalog_and_context(catalog, context)
+                    .await?;
+                vs.search(&candidates).await
+            })?
+            .map_err(graph_error_to_pyerr)?;
+
+        record_batch_to_python_table(py, &result_batch)
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "CypherEngine(nodes={}, relationships={})",
