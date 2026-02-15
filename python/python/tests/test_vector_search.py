@@ -384,7 +384,8 @@ def test_cypher_engine_vector_rerank_multiple_queries(vector_env):
     )
 
     results2 = engine.execute_with_vector_rerank(
-        "MATCH (d:Document) WHERE d.category = 'science' RETURN d.id, d.name, d.embedding",
+        "MATCH (d:Document) WHERE d.category = 'science' "
+        "RETURN d.id, d.name, d.embedding",
         VectorSearch("d.embedding")
         .query_vector([0.0, 1.0, 0.0])
         .metric(DistanceMetric.Cosine)
