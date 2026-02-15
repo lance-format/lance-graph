@@ -345,7 +345,9 @@ def test_cypher_engine_vs_cypher_query_vector_rerank_equivalence(vector_env):
 
     config, datasets, _ = vector_env
 
-    query_text = "MATCH (d:Document) WHERE d.category = 'tech' RETURN d.id, d.name, d.embedding"
+    query_text = (
+        "MATCH (d:Document) WHERE d.category = 'tech' RETURN d.id, d.name, d.embedding"
+    )
     vector_search = (
         VectorSearch("d.embedding")
         .query_vector([1.0, 0.0, 0.0])
