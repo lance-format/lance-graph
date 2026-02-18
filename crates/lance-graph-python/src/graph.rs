@@ -1330,3 +1330,95 @@ pub fn register_graph_module(py: Python, parent_module: &Bound<'_, PyModule>) ->
     parent_module.add_submodule(&graph_module)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_vector_column_with_alias() {
+        let (alias, column) = split_vector_column("d.embedding");
+        assert_eq!(alias, Some("d".to_string()));
+        assert_eq!(column, "embedding");
+    }
+
+    #[test]
+    fn test_split_vector_column_without_alias() {
+        let (alias, column) = split_vector_column("embedding");
+        assert_eq!(alias, None);
+        assert_eq!(column, "embedding");
+    }
+
+    #[test]
+    fn test_split_vector_column_with_multiple_dots() {
+        // Should only split on the first dot
+        let (alias, column) = split_vector_column("d.nested.embedding");
+        assert_eq!(alias, Some("d".to_string()));
+        assert_eq!(column, "nested.embedding");
+    }
+
+    #[test]
+    fn test_split_vector_column_empty_string() {
+        let (alias, column) = split_vector_column("");
+        assert_eq!(alias, None);
+        assert_eq!(column, "");
+    }
+
+    #[test]
+    fn test_alias_map_from_simple_node_query() {
+        let query = RustCypherQuery::new("MATCH (d:Document) RETURN d.name").unwrap();
+        let map = alias_map_from_query(&query);
+        assert_eq!(map.get("d"), Some(&"Document".to_string()));
+    }
+
+    #[test]
+    fn test_alias_map_from_multiple_nodes() {
+        let query =
+            RustCypherQuery::new("MATCH (p:Person), (d:Document) RETURN p.name, d.title").unwrap();
+        let map = alias_map_from_query(&query);
+        assert_eq!(map.get("p"), Some(&"Person".to_string()));
+        assert_eq!(map.get("d"), Some(&"Document".to_string()));
+    }
+
+    #[test]
+    fn test_alias_map_from_path_query() {
+        let query =
+            RustCypherQuery::new("MATCH (p:Person)-[:KNOWS]->(f:Friend) RETURN p.name, f.name")
+                .unwrap();
+        let map = alias_map_from_query(&query);
+        assert_eq!(map.get("p"), Some(&"Person".to_string()));
+        assert_eq!(map.get("f"), Some(&"Friend".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_vector_label_with_alias() {
+        let query = RustCypherQuery::new("MATCH (d:Document) RETURN d.name").unwrap();
+        let result = resolve_vector_label(&query, Some("d")).unwrap();
+        assert_eq!(result, Some("Document".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_vector_label_without_alias_single_node() {
+        let query = RustCypherQuery::new("MATCH (d:Document) RETURN d.name").unwrap();
+        // When no alias is provided and there's only one node, should return that label
+        let result = resolve_vector_label(&query, None).unwrap();
+        assert_eq!(result, Some("Document".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_vector_label_without_alias_multiple_nodes() {
+        let query =
+            RustCypherQuery::new("MATCH (p:Person), (d:Document) RETURN p.name, d.title").unwrap();
+        // When no alias is provided and there are multiple nodes, should return None
+        let result = resolve_vector_label(&query, None).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_vector_label_unknown_alias() {
+        let query = RustCypherQuery::new("MATCH (d:Document) RETURN d.name").unwrap();
+        // When alias doesn't exist in the query, should return None
+        let result = resolve_vector_label(&query, Some("x")).unwrap();
+        assert_eq!(result, None);
+    }
+}
