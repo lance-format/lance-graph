@@ -223,7 +223,7 @@ def test_use_lance_index_missing_query_vector(vector_env, tmp_path):
 
 
 def test_use_lance_index_fallback_non_lance_dataset(vector_env):
-    """Test that use_lance_index=True falls back for non-Lance datasets (PyArrow tables)."""
+    """Test use_lance_index=True falls back for non-Lance datasets."""
     config, datasets, _ = vector_env
 
     query = CypherQuery(
