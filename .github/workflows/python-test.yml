@@ -36,8 +36,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: python
-          cache-targets: false
+          workspaces: crates/lance-graph-python
       - name: Install dependencies
         run: |
           sudo apt update
