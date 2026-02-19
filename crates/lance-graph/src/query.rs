@@ -769,7 +769,7 @@ impl CypherQuery {
 
         // Phase 1: Semantic Analysis
         let mut analyzer = SemanticAnalyzer::new(config.clone());
-        let semantic = analyzer.analyze(&self.ast)?;
+        let semantic = analyzer.analyze(&self.ast, &self.parameters)?;
         if !semantic.errors.is_empty() {
             return Err(GraphError::PlanError {
                 message: format!("Semantic analysis failed:\n{}", semantic.errors.join("\n")),
@@ -779,7 +779,8 @@ impl CypherQuery {
 
         // Phase 2: Graph Logical Plan
         let mut logical_planner = LogicalPlanner::new();
-        let logical_plan = logical_planner.plan(&self.ast)?;
+        // Use the transformed AST (with parameters substituted)
+        let logical_plan = logical_planner.plan(&semantic.ast)?;
 
         // Phase 3: DataFusion Logical Plan
         let df_planner = DataFusionPlanner::with_catalog(config.clone(), catalog);
@@ -943,7 +944,7 @@ impl CypherQuery {
 
         // Ensure we don't silently ignore unsupported features (e.g. scalar functions).
         let mut analyzer = SemanticAnalyzer::new(config);
-        let semantic = analyzer.analyze(&self.ast)?;
+        let semantic = analyzer.analyze(&self.ast, &self.parameters)?;
         if !semantic.errors.is_empty() {
             return Err(GraphError::PlanError {
                 message: format!("Semantic analysis failed:\n{}", semantic.errors.join("\n")),
@@ -1489,12 +1490,16 @@ mod tests {
     fn test_query_with_parameters() {
         let mut params = HashMap::new();
         params.insert("minAge".to_string(), serde_json::Value::Number(30.into()));
+        params.insert("maxAge".to_string(), serde_json::Value::Number(50.into()));
 
-        let query = CypherQuery::new("MATCH (n:Person) WHERE n.age > $minAge RETURN n.name")
-            .unwrap()
-            .with_parameters(params);
+        let query = CypherQuery::new(
+            "MATCH (n:Person) WHERE n.age > $minAge AND n.age < $maxAge RETURN n.name",
+        )
+        .unwrap()
+        .with_parameters(params);
 
         assert!(query.parameters().contains_key("minAge"));
+        assert!(query.parameters().contains_key("maxAge"));
     }
 
     #[test]
