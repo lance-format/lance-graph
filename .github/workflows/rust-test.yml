@@ -37,8 +37,10 @@ jobs:
           rustup default ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/lance-graph
-          cache-targets: false
+          shared-key: "lance-graph-deps"
+          workspaces: |
+            crates/lance-graph
+            crates/lance-graph-python
       - name: Install dependencies
         run: |
           sudo apt update
@@ -61,8 +63,10 @@ jobs:
           rustup default stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/lance-graph
-          cache-targets: false
+          shared-key: "lance-graph-deps"
+          workspaces: |
+            crates/lance-graph
+            crates/lance-graph-python
       - name: Install dependencies
         run: |
           sudo apt update
