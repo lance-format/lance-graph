@@ -18,6 +18,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-C debuginfo=1"
+  CARGO_INCREMENTAL: "1"
 
 jobs:
   test:
@@ -104,4 +105,3 @@ jobs:
         run: |
           source .venv/bin/activate
           pyright
-# Cache test - verifying shared cache works
