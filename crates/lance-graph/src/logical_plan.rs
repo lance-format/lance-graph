@@ -530,9 +530,9 @@ impl<'a> LogicalPlanner<'a> {
                                     variable: var.clone(),
                                     property: mapping.id_field.clone(),
                                 }),
-                                alias: alias.clone().map_or(None, |name| {
-                                    Some(format!("{}.{}", name, mapping.id_field))
-                                }),
+                                alias: alias
+                                    .clone()
+                                    .map(|name| format!("{}.{}", name, mapping.id_field)),
                             });
 
                             for prop in &mapping.property_fields {
@@ -541,9 +541,7 @@ impl<'a> LogicalPlanner<'a> {
                                         variable: var.clone(),
                                         property: prop.clone(),
                                     }),
-                                    alias: alias
-                                        .clone()
-                                        .map_or(None, |name| Some(format!("{}.{}", name, prop))),
+                                    alias: alias.clone().map(|name| format!("{}.{}", name, prop)),
                                 });
                             }
                         }
