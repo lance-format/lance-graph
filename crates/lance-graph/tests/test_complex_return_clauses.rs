@@ -16,9 +16,17 @@ use std::sync::Arc;
 // | 1  | Bob     |
 // | 2  | Alice   |
 // | 3  | Charlie |
+//
+// Person Dataset with Duplicates:
+// | id | name    |
+// |----|---------|
+// | 1  | Bob     |
+// | 1  | Bob     |
+// | 3  | Charlie |
+//
 // Scenarios Tested:
 // 1. RETURN node_variable; should expand to all properties in RETURN clause
-// 2. RETURN DISTINCT node_variable; should expand to all properties with DISTINCT
+// 2. RETURN DISTINCT node_variable; should expand to all properties and return unique rows
 // 3. RETURN node_variable ORDER BY; should expand to all properties and sort accordingly
 
 /// Helper to create Person dataset
@@ -33,6 +41,23 @@ fn create_person_dataset() -> RecordBatch {
         vec![
             Arc::new(Int64Array::from(vec![1, 2, 3])),
             Arc::new(StringArray::from(vec!["Bob", "Alice", "Charlie"])),
+        ],
+    )
+    .unwrap()
+}
+
+/// Helper to create Person dataset with duplicates
+fn create_person_dataset_with_dups() -> RecordBatch {
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int64, false),
+        Field::new("name", DataType::Utf8, false),
+    ]));
+
+    RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(Int64Array::from(vec![1, 1, 3])),
+            Arc::new(StringArray::from(vec!["Bob", "Bob", "Charlie"])),
         ],
     )
     .unwrap()
@@ -72,7 +97,7 @@ async fn test_return_node_variable_expands_properties() {
 #[tokio::test]
 async fn test_return_node_variable_expands_properties_with_distinct() {
     let config = create_graph_config();
-    let person_batch = create_person_dataset();
+    let person_batch = create_person_dataset_with_dups();
 
     let query = CypherQuery::new("MATCH (p:Person) RETURN DISTINCT p")
         .unwrap()
@@ -85,7 +110,7 @@ async fn test_return_node_variable_expands_properties_with_distinct() {
 
     assert_eq!(result.num_columns(), 2);
     assert_eq!(result.schema().field_names(), vec!["p.id", "p.name"]);
-    assert_eq!(result.num_rows(), 3);
+    assert_eq!(result.num_rows(), 2);
 }
 
 #[tokio::test]
