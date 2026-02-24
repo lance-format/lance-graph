@@ -53,7 +53,8 @@ jobs:
           uv venv
           source .venv/bin/activate
           uv pip install maturin[patchelf]
-          uv pip install -e .[tests]
+          # Install test dependencies only (skip editable install to avoid double-building Rust)
+          uv pip install pytest pyarrow pandas ruff
       - name: Build Python extension
         working-directory: python
         run: |
