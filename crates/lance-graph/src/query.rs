@@ -778,7 +778,7 @@ impl CypherQuery {
         }
 
         // Phase 2: Graph Logical Plan
-        let mut logical_planner = LogicalPlanner::new();
+        let mut logical_planner = LogicalPlanner::new(config);
         let logical_plan = logical_planner.plan(&self.ast)?;
 
         // Phase 3: DataFusion Logical Plan
