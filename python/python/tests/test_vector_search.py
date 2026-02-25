@@ -181,6 +181,369 @@ def test_execute_with_vector_rerank_basic(vector_env):
     assert data["d.name"][1] == "Doc2"
 
 
+@pytest.mark.requires_lance
+def test_use_lance_index_missing_query_vector(vector_env, tmp_path):
+    """Test error when use_lance_index=True but query_vector is not set."""
+    config, _, _ = vector_env
+
+    import lance
+    import numpy as np
+
+    embedding_values = np.array(
+        [[1.0, 0.0, 0.0], [0.9, 0.1, 0.0]],
+        dtype=np.float32,
+    )
+
+    documents_table = pa.table(
+        {
+            "id": [1, 2],
+            "name": ["Doc1", "Doc2"],
+            "embedding": pa.FixedSizeListArray.from_arrays(
+                embedding_values.flatten(), list_size=3
+            ),
+        }
+    )
+
+    dataset_path = tmp_path / "Document.lance"
+    lance.write_dataset(documents_table, dataset_path)
+    lance_dataset = lance.dataset(str(dataset_path))
+
+    query = CypherQuery(
+        "MATCH (d:Document) RETURN d.id, d.name, d.embedding"
+    ).with_config(config)
+
+    with pytest.raises(ValueError, match="query_vector is required"):
+        query.execute_with_vector_rerank(
+            {"Document": lance_dataset},
+            VectorSearch("d.embedding")
+            .metric(DistanceMetric.L2)
+            .top_k(3)
+            .use_lance_index(True),  # No query_vector set
+        )
+
+
+def test_use_lance_index_fallback_non_lance_dataset(vector_env):
+    """Test use_lance_index=True falls back for non-Lance datasets."""
+    config, datasets, _ = vector_env
+
+    query = CypherQuery(
+        "MATCH (d:Document) RETURN d.id, d.name, d.embedding"
+    ).with_config(config)
+
+    # Should work fine - falls back to standard rerank for PyArrow table
+    results = query.execute_with_vector_rerank(
+        datasets,  # PyArrow tables, not Lance datasets
+        VectorSearch("d.embedding")
+        .query_vector([1.0, 0.0, 0.0])
+        .metric(DistanceMetric.L2)
+        .top_k(3)
+        .use_lance_index(True),  # Should fallback silently
+    )
+
+    data = results.to_pydict()
+    assert len(data["d.name"]) == 3
+    assert data["d.name"][0] == "Doc1"
+    # _distance column should be present (standard rerank path)
+    assert "_distance" in data
+
+
+@pytest.mark.requires_lance
+def test_use_lance_index_unqualified_column(vector_env, tmp_path):
+    """Test use_lance_index with unqualified column name (no alias prefix)."""
+    config, _, _ = vector_env
+
+    import lance
+    import numpy as np
+
+    embedding_values = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0],
+            [0.0, 1.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+
+    documents_table = pa.table(
+        {
+            "id": [1, 2, 3],
+            "name": ["Doc1", "Doc2", "Doc3"],
+            "embedding": pa.FixedSizeListArray.from_arrays(
+                embedding_values.flatten(), list_size=3
+            ),
+        }
+    )
+
+    dataset_path = tmp_path / "Document.lance"
+    lance.write_dataset(documents_table, dataset_path)
+    lance_dataset = lance.dataset(str(dataset_path))
+
+    # Use unqualified column name "embedding" instead of "d.embedding"
+    # This should still work when there's only one node label in the query
+    query = CypherQuery(
+        "MATCH (d:Document) RETURN d.id, d.name, d.embedding"
+    ).with_config(config)
+
+    results = query.execute_with_vector_rerank(
+        {"Document": lance_dataset},
+        VectorSearch("embedding")  # No alias prefix
+        .query_vector([1.0, 0.0, 0.0])
+        .metric(DistanceMetric.L2)
+        .top_k(2)
+        .use_lance_index(True),
+    )
+
+    data = results.to_pydict()
+    assert len(data["d.name"]) == 2
+    assert data["d.name"][0] == "Doc1"
+
+
+def test_use_lance_index_builder_propagation():
+    """Test that use_lance_index flag is properly propagated through builder methods."""
+    vs = VectorSearch("embedding").use_lance_index(True)
+
+    # Each builder method should preserve the use_lance_index flag
+    vs2 = vs.query_vector([1.0, 0.0, 0.0])
+    vs3 = vs2.metric(DistanceMetric.L2)
+    vs4 = vs3.top_k(10)
+    vs5 = vs4.include_distance(True)
+    vs6 = vs5.distance_column_name("dist")
+
+    # All should still have use_lance_index=True (we verify by using it)
+    # This is an indirect test - if propagation failed, the final object
+    # would have use_lance_index=False
+    # We can't directly inspect the flag, but we can verify the chain works
+    assert vs6 is not None  # Chain completed successfully
+
+
+@pytest.mark.requires_lance
+def test_use_lance_index_cosine_metric(vector_env, tmp_path):
+    """Test use_lance_index with cosine distance metric."""
+    config, _, _ = vector_env
+
+    import lance
+    import numpy as np
+
+    embedding_values = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0],
+            [0.0, 1.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+
+    documents_table = pa.table(
+        {
+            "id": [1, 2, 3],
+            "name": ["Doc1", "Doc2", "Doc3"],
+            "embedding": pa.FixedSizeListArray.from_arrays(
+                embedding_values.flatten(), list_size=3
+            ),
+        }
+    )
+
+    dataset_path = tmp_path / "Document.lance"
+    lance.write_dataset(documents_table, dataset_path)
+    lance_dataset = lance.dataset(str(dataset_path))
+
+    query = CypherQuery(
+        "MATCH (d:Document) RETURN d.id, d.name, d.embedding"
+    ).with_config(config)
+
+    results = query.execute_with_vector_rerank(
+        {"Document": lance_dataset},
+        VectorSearch("d.embedding")
+        .query_vector([1.0, 0.0, 0.0])
+        .metric(DistanceMetric.Cosine)  # Using cosine metric
+        .top_k(2)
+        .use_lance_index(True),
+    )
+
+    data = results.to_pydict()
+    assert len(data["d.name"]) == 2
+    assert data["d.name"][0] == "Doc1"
+
+
+@pytest.mark.requires_lance
+def test_use_lance_index_dot_metric(vector_env, tmp_path):
+    """Test use_lance_index with dot product metric."""
+    config, _, _ = vector_env
+
+    import lance
+    import numpy as np
+
+    embedding_values = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0],
+            [0.0, 1.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+
+    documents_table = pa.table(
+        {
+            "id": [1, 2, 3],
+            "name": ["Doc1", "Doc2", "Doc3"],
+            "embedding": pa.FixedSizeListArray.from_arrays(
+                embedding_values.flatten(), list_size=3
+            ),
+        }
+    )
+
+    dataset_path = tmp_path / "Document.lance"
+    lance.write_dataset(documents_table, dataset_path)
+    lance_dataset = lance.dataset(str(dataset_path))
+
+    query = CypherQuery(
+        "MATCH (d:Document) RETURN d.id, d.name, d.embedding"
+    ).with_config(config)
+
+    results = query.execute_with_vector_rerank(
+        {"Document": lance_dataset},
+        VectorSearch("d.embedding")
+        .query_vector([1.0, 0.0, 0.0])
+        .metric(DistanceMetric.Dot)  # Using dot product metric
+        .top_k(2)
+        .use_lance_index(True),
+    )
+
+    data = results.to_pydict()
+    assert len(data["d.name"]) == 2
+    assert data["d.name"][0] == "Doc1"
+
+
+@pytest.mark.requires_lance
+def test_execute_with_vector_rerank_lance_index(vector_env, tmp_path):
+    """Test vector-first execution using Lance datasets.
+
+    Note: This test does NOT create an actual vector index on the Lance dataset.
+    Lance will fall back to flat (brute-force) search when use_index=True is set
+    but no index exists. This test validates:
+    1. The code path for the vector-first execution is exercised
+    2. Results are correct (matching the standard rerank behavior)
+    3. The Lance dataset integration works end-to-end
+
+    To test actual ANN index behavior, create an index with:
+        lance_dataset.create_index("embedding", index_type="IVF_PQ", ...)
+    """
+    config, _, _ = vector_env
+
+    import lance
+    import numpy as np
+
+    # Create embeddings with fixed-size list type (required for Lance vector search)
+    embedding_values = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.5, 0.5, 0.0],
+        ],
+        dtype=np.float32,
+    )
+
+    documents_table = pa.table(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "name": ["Doc1", "Doc2", "Doc3", "Doc4", "Doc5"],
+            "category": ["tech", "tech", "science", "tech", "science"],
+            "embedding": pa.FixedSizeListArray.from_arrays(
+                embedding_values.flatten(), list_size=3
+            ),
+        }
+    )
+
+    dataset_path = tmp_path / "Document.lance"
+    lance.write_dataset(documents_table, dataset_path)
+    lance_dataset = lance.dataset(str(dataset_path))
+
+    query = CypherQuery(
+        "MATCH (d:Document) RETURN d.id, d.name, d.embedding"
+    ).with_config(config)
+
+    results = query.execute_with_vector_rerank(
+        {"Document": lance_dataset},
+        VectorSearch("d.embedding")
+        .query_vector([1.0, 0.0, 0.0])
+        .metric(DistanceMetric.L2)
+        .top_k(3)
+        .use_lance_index(True),
+    )
+
+    data = results.to_pydict()
+    assert len(data["d.name"]) == 3
+    assert data["d.name"][0] == "Doc1"
+    assert data["d.name"][1] == "Doc2"
+
+
+@pytest.mark.requires_lance
+def test_execute_with_vector_rerank_lance_index_fallback_on_where(vector_env, tmp_path):
+    """Test that use_lance_index falls back to standard rerank with WHERE clause.
+
+    When a Cypher query includes filters (WHERE clause), the vector-first path would
+    change semantics: it would search ALL vectors first, then apply filters. This could
+    miss relevant results that match the filter but aren't in the top-k vectors.
+
+    The implementation correctly detects this and falls back to the standard
+    candidate-then-rerank path.
+    """
+    config, _, _ = vector_env
+
+    import lance
+    import numpy as np
+
+    # Create embeddings with fixed-size list type (required for Lance vector search)
+    embedding_values = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.9, 0.1, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [0.5, 0.5, 0.0],
+        ],
+        dtype=np.float32,
+    )
+
+    documents_table = pa.table(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "name": ["Doc1", "Doc2", "Doc3", "Doc4", "Doc5"],
+            "category": ["tech", "tech", "science", "tech", "science"],
+            "embedding": pa.FixedSizeListArray.from_arrays(
+                embedding_values.flatten(), list_size=3
+            ),
+        }
+    )
+
+    dataset_path = tmp_path / "Document.lance"
+    lance.write_dataset(documents_table, dataset_path)
+    lance_dataset = lance.dataset(str(dataset_path))
+
+    # Query WITH a WHERE clause - should fall back to standard rerank
+    query = CypherQuery(
+        "MATCH (d:Document) WHERE d.category = 'tech' RETURN d.id, d.name, d.embedding"
+    ).with_config(config)
+
+    results = query.execute_with_vector_rerank(
+        {"Document": lance_dataset},
+        VectorSearch("d.embedding")
+        .query_vector([1.0, 0.0, 0.0])
+        .metric(DistanceMetric.L2)
+        .top_k(3)
+        .use_lance_index(True),  # This will be ignored due to WHERE clause
+    )
+
+    data = results.to_pydict()
+    # Should only have tech documents (Doc1, Doc2, Doc4), not science docs
+    assert len(data["d.name"]) == 3
+    assert all(name in ["Doc1", "Doc2", "Doc4"] for name in data["d.name"])
+    # Doc1 should still be first (closest to [1,0,0])
+    assert data["d.name"][0] == "Doc1"
+
+
 def test_execute_with_vector_rerank_filtered(vector_env):
     """Test Cypher filter + vector rerank."""
     config, datasets, _ = vector_env

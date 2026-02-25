@@ -18,6 +18,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-C debuginfo=1"
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   test:
@@ -36,8 +37,10 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: python
-          cache-targets: false
+          shared-key: "lance-graph-deps"
+          workspaces: |
+            crates/lance-graph
+            crates/lance-graph-python
       - name: Install dependencies
         run: |
           sudo apt update
@@ -50,7 +53,8 @@ jobs:
           uv venv
           source .venv/bin/activate
           uv pip install maturin[patchelf]
-          uv pip install -e .[tests]
+          # Install test dependencies only (skip editable install to avoid double-building Rust)
+          uv pip install pytest pyarrow pandas ruff
       - name: Build Python extension
         working-directory: python
         run: |
