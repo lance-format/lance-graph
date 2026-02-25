@@ -101,13 +101,16 @@ impl CypherQuery {
         K: Into<String>,
         V: Into<serde_json::Value>,
     {
-        self.parameters.insert(key.into(), value.into());
+        self.parameters
+            .insert(key.into().to_lowercase(), value.into());
         self
     }
 
     /// Add multiple parameters to the query
     pub fn with_parameters(mut self, params: HashMap<String, serde_json::Value>) -> Self {
-        self.parameters.extend(params);
+        for (k, v) in params {
+            self.parameters.insert(k.to_lowercase(), v);
+        }
         self
     }
 
@@ -1498,8 +1501,8 @@ mod tests {
         .unwrap()
         .with_parameters(params);
 
-        assert!(query.parameters().contains_key("minAge"));
-        assert!(query.parameters().contains_key("maxAge"));
+        assert!(query.parameters().contains_key("minage"));
+        assert!(query.parameters().contains_key("maxage"));
     }
 
     #[test]

@@ -106,10 +106,13 @@ fn substitute_in_property_value(
     parameters: &HashMap<String, serde_json::Value>,
 ) -> Result<()> {
     if let PropertyValue::Parameter(name) = value {
-        let param_value = parameters.get(name).ok_or_else(|| GraphError::PlanError {
-            message: format!("Missing parameter: ${}", name),
-            location: snafu::Location::new(file!(), line!(), column!()),
-        })?;
+        let param_value =
+            parameters
+                .get(&name.to_lowercase())
+                .ok_or_else(|| GraphError::PlanError {
+                    message: format!("Missing parameter: ${}", name),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
 
         *value = json_to_property_value(param_value)?;
     }
@@ -198,10 +201,13 @@ fn substitute_in_value_expression(
 ) -> Result<()> {
     match expr {
         ValueExpression::Parameter(name) => {
-            let param_value = parameters.get(name).ok_or_else(|| GraphError::PlanError {
-                message: format!("Missing parameter: ${}", name),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
+            let param_value =
+                parameters
+                    .get(&name.to_lowercase())
+                    .ok_or_else(|| GraphError::PlanError {
+                        message: format!("Missing parameter: ${}", name),
+                        location: snafu::Location::new(file!(), line!(), column!()),
+                    })?;
 
             // Check for array to VectorLiteral conversion
             if let serde_json::Value::Array(arr) = param_value {
@@ -257,7 +263,10 @@ fn json_to_property_value(value: &serde_json::Value) -> Result<PropertyValue> {
             } else if let Some(f) = n.as_f64() {
                 Ok(PropertyValue::Float(f))
             } else {
-                Ok(PropertyValue::Null)
+                Err(GraphError::PlanError {
+                    message: format!("Number parameter could not be converted to i64 or f64: {}", n),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })
             }
         }
         serde_json::Value::String(s) => Ok(PropertyValue::String(s.clone())),
