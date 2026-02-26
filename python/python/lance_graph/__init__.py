@@ -72,6 +72,8 @@ GraphConfig = _bindings.graph.GraphConfig
 GraphConfigBuilder = _bindings.graph.GraphConfigBuilder
 CypherQuery = _bindings.graph.CypherQuery
 CypherEngine = _bindings.graph.CypherEngine
+SqlQuery = _bindings.graph.SqlQuery
+SqlEngine = _bindings.graph.SqlEngine
 ExecutionStrategy = _bindings.graph.ExecutionStrategy
 VectorSearch = _bindings.graph.VectorSearch
 DistanceMetric = _bindings.graph.DistanceMetric
@@ -83,6 +85,8 @@ __all__ = [
     "GraphConfigBuilder",
     "CypherQuery",
     "CypherEngine",
+    "SqlQuery",
+    "SqlEngine",
     "ExecutionStrategy",
     "VectorSearch",
     "DistanceMetric",

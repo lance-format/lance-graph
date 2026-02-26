@@ -23,7 +23,7 @@ use std::sync::Arc;
 ///
 /// This ensures that column names in the dataset match the normalized
 /// qualified column names used internally (e.g., "fullName" becomes "fullname").
-fn normalize_schema(schema: SchemaRef) -> Result<SchemaRef> {
+pub(crate) fn normalize_schema(schema: SchemaRef) -> Result<SchemaRef> {
     let fields: Vec<_> = schema
         .fields()
         .iter()
@@ -42,7 +42,7 @@ fn normalize_schema(schema: SchemaRef) -> Result<SchemaRef> {
 ///
 /// This creates a new RecordBatch with a normalized schema while
 /// preserving all the data arrays.
-fn normalize_record_batch(batch: &RecordBatch) -> Result<RecordBatch> {
+pub(crate) fn normalize_record_batch(batch: &RecordBatch) -> Result<RecordBatch> {
     let normalized_schema = normalize_schema(batch.schema())?;
     RecordBatch::try_new(normalized_schema, batch.columns().to_vec()).map_err(|e| {
         GraphError::PlanError {
