@@ -1,4 +1,12 @@
-"""Python bindings for the ``lance-graph`` crate."""
+"""Python bindings for the ``lance-graph`` crate.
+
+Provides two query interfaces:
+
+- **Cypher**: ``CypherQuery`` and ``CypherEngine`` for graph-pattern queries
+  (requires a ``GraphConfig`` with node/relationship mappings).
+- **SQL**: ``SqlQuery`` and ``SqlEngine`` for standard SQL queries executed
+  directly against datasets via DataFusion (no ``GraphConfig`` needed).
+"""
 
 from __future__ import annotations
 
