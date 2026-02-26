@@ -48,6 +48,7 @@ pub mod parser;
 pub mod query;
 pub mod semantic;
 pub mod simple_executor;
+pub mod sql_query;
 
 /// Maximum allowed hops for variable-length relationship expansion (e.g., *1..N)
 pub const MAX_VARIABLE_LENGTH_HOPS: u32 = 20;
@@ -59,3 +60,4 @@ pub use lance_graph_catalog::{
 };
 pub use lance_vector_search::VectorSearch;
 pub use query::{CypherQuery, ExecutionStrategy};
+pub use sql_query::SqlQuery;

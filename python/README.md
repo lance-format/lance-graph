@@ -82,6 +82,40 @@ print(result1.to_pylist())
 # [{'p.name': 'Alice'}]
 ```
 
+### 3. Direct SQL Queries
+
+For data analytics workflows where you prefer standard SQL over Cypher, use `SqlQuery` or `SqlEngine`. No `GraphConfig` is needed — write explicit JOINs against your tables directly:
+
+```python
+import pyarrow as pa
+from lance_graph import SqlQuery, SqlEngine
+
+person = pa.table({
+    "id": [1, 2, 3],
+    "name": ["Alice", "Bob", "Carol"],
+    "age": [28, 34, 29],
+})
+knows = pa.table({"src_id": [1, 1, 2], "dst_id": [2, 3, 3]})
+datasets = {"person": person, "knows": knows}
+
+# One-off query
+result = SqlQuery(
+    "SELECT p.name, p.age FROM person p WHERE p.age > 30"
+).execute(datasets)
+print(result.to_pylist())
+# [{'name': 'Bob', 'age': 34}]
+
+# Multi-query with cached context
+engine = SqlEngine(datasets)
+r1 = engine.execute("SELECT COUNT(*) AS cnt FROM person")
+r2 = engine.execute(
+    "SELECT p1.name AS person, p2.name AS friend "
+    "FROM person p1 "
+    "JOIN knows k ON p1.id = k.src_id "
+    "JOIN person p2 ON p2.id = k.dst_id"
+)
+```
+
 ### 3. Build a Knowledge Graph from Text
 
 ```python

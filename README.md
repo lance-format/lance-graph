@@ -67,6 +67,32 @@ result = query.execute({"Person": people})
 print(result.to_pydict())  # {'name': ['Bob', 'David'], 'age': [34, 42]}
 ```
 
+## Python example: Direct SQL query
+
+For data analytics workflows where you prefer standard SQL, use `SqlQuery` or `SqlEngine`. No `GraphConfig` is needed:
+
+```python
+import pyarrow as pa
+from lance_graph import SqlQuery, SqlEngine
+
+person = pa.table({
+    "id": [1, 2, 3],
+    "name": ["Alice", "Bob", "Carol"],
+    "age": [28, 34, 29],
+})
+
+# One-off query
+result = SqlQuery(
+    "SELECT name, age FROM person WHERE age > 30"
+).execute({"person": person})
+print(result.to_pydict())  # {'name': ['Bob'], 'age': [34]}
+
+# Multi-query with cached context
+engine = SqlEngine({"person": person})
+r1 = engine.execute("SELECT COUNT(*) AS cnt FROM person")
+r2 = engine.execute("SELECT name FROM person ORDER BY age DESC LIMIT 2")
+```
+
 ## Knowledge Graph CLI & API
 
 The `knowledge_graph` package layers a simple Lance-backed knowledge graph
