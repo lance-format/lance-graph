@@ -122,7 +122,12 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
         VE::Literal(PV::Null) => {
             datafusion::logical_expr::Expr::Literal(datafusion::scalar::ScalarValue::Null, None)
         }
-        VE::Literal(PV::Parameter(_)) => lit(0),
+        VE::Literal(PV::Parameter(name)) => {
+            panic!(
+                "Parameter ${} should have been substituted during semantic analysis",
+                name
+            );
+        }
         VE::Literal(PV::Property(prop)) => {
             // Create qualified column name: variable__property (lowercase for case-insensitivity)
             col(qualify_column(&prop.variable, &prop.property))
@@ -316,18 +321,10 @@ pub(crate) fn to_df_value_expr(expr: &ValueExpression) -> Expr {
             lit(scalar)
         }
         VE::Parameter(name) => {
-            // TODO: Implement proper parameter resolution
-            // Parameters ($param) should be resolved to literal values from the query's
-            // parameter map (CypherQuery::parameters()) before or during planning.
-            //
-            // Current limitation: This creates a column reference as a placeholder,
-            // which will fail at execution if the column doesn't exist.
-            //
-            // Proper fix requires one of:
-            // 1. Resolve parameters during semantic analysis (substitute before planning)
-            // 2. Pass parameter map to to_df_value_expr and resolve here
-            // 3. Use DataFusion's parameter binding mechanism
-            col(format!("${}", name))
+            panic!(
+                "Parameter ${} should have been substituted during semantic analysis",
+                name
+            );
         }
     }
 }

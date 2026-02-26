@@ -589,9 +589,8 @@ fn parse_vector_similarity(input: &str) -> IResult<&str, ValueExpression> {
 
 // Parse parameter reference: $name
 fn parse_parameter(input: &str) -> IResult<&str, ValueExpression> {
-    let (input, _) = char('$')(input)?;
-    let (input, name) = identifier(input)?;
-    Ok((input, ValueExpression::Parameter(name.to_string())))
+    let (input, name) = parameter(input)?;
+    Ok((input, ValueExpression::Parameter(name)))
 }
 
 // Parse a function call: function_name(args)
@@ -973,9 +972,8 @@ fn boolean_literal(input: &str) -> IResult<&str, bool> {
 
 // Parse a parameter reference
 fn parameter(input: &str) -> IResult<&str, String> {
-    let (input, _) = char('$')(input)?;
-    let (input, name) = identifier(input)?;
-    Ok((input, name.to_string()))
+    // Only support $param syntax
+    map(preceded(char('$'), identifier), |s| s.to_string())(input)
 }
 
 // Parse comma with optional whitespace
@@ -1697,6 +1695,58 @@ mod tests {
             },
             _ => panic!("Expected comparison"),
         }
+    }
+
+    #[test]
+    fn test_parse_multiple_parameters() {
+        let query = "MATCH (p:Person) WHERE p.age > $min_age AND p.age < $max_age RETURN p";
+        let result = parse_cypher_query(query);
+        assert!(
+            result.is_ok(),
+            "Multiple parameters should parse successfully"
+        );
+
+        let ast = result.unwrap();
+        let where_clause = ast.where_clause.expect("Expected WHERE clause");
+
+        match where_clause.expression {
+            BooleanExpression::And(left, right) => {
+                // Check left: p.age > $min_age
+                match *left {
+                    BooleanExpression::Comparison {
+                        right: val_right, ..
+                    } => match val_right {
+                        ValueExpression::Parameter(name) => {
+                            assert_eq!(name, "min_age");
+                        }
+                        _ => panic!("Expected Parameter min_age"),
+                    },
+                    _ => panic!("Expected comparison on left"),
+                }
+
+                // Check right: p.age < $max_age
+                match *right {
+                    BooleanExpression::Comparison {
+                        right: val_right, ..
+                    } => match val_right {
+                        ValueExpression::Parameter(name) => {
+                            assert_eq!(name, "max_age");
+                        }
+                        _ => panic!("Expected Parameter max_age"),
+                    },
+                    _ => panic!("Expected comparison on right"),
+                }
+            }
+            _ => panic!("Expected AND expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_parameter_formats() {
+        // Test $param (should succeed)
+        let query = "MATCH (p:Person) WHERE p.age > $min_age RETURN p";
+        let result = parse_cypher_query(query);
+        assert!(result.is_ok(), "$param should parse successfully");
     }
 
     #[test]
