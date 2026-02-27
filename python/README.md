@@ -116,7 +116,46 @@ r2 = engine.execute(
 )
 ```
 
-### 3. Build a Knowledge Graph from Text
+### 4. Unity Catalog Integration
+
+Connect to [Unity Catalog](https://github.com/unitycatalog/unitycatalog) (OSS) to discover and query Delta Lake or Parquet tables without manually loading data:
+
+```python
+from lance_graph import UnityCatalog
+
+# Connect to Unity Catalog
+uc = UnityCatalog("http://localhost:8080/api/2.1/unity-catalog")
+
+# Browse catalog hierarchy
+catalogs = uc.list_catalogs()
+schemas = uc.list_schemas("unity")
+tables = uc.list_tables("unity", "default")
+
+# Inspect table metadata
+table = uc.get_table("unity", "default", "marksheet")
+print(table.data_source_format)  # "Delta"
+print(table.columns())           # [{"name": "id", "type_name": "INT", ...}, ...]
+
+# Auto-register all tables and query via SQL
+engine = uc.create_sql_engine("unity", "default")
+result = engine.execute("SELECT * FROM marksheet WHERE mark > 80")
+print(result.to_pandas())
+```
+
+For tables on cloud storage (S3, Azure, GCS):
+
+```python
+uc = UnityCatalog(
+    "http://localhost:8080/api/2.1/unity-catalog",
+    storage_options={
+        "azure_storage_account_name": "myaccount",
+        "azure_storage_account_key": "...",
+    }
+)
+engine = uc.create_sql_engine("unity", "default")
+```
+
+### 5. Build a Knowledge Graph from Text
 
 ```python
 from pathlib import Path
@@ -175,7 +214,7 @@ result = kg.query("""
 print(result.to_pylist())
 ```
 
-### 4. Natural Language Q&A
+### 6. Natural Language Q&A
 
 ```python
 from knowledge_graph.llm.qa import ask_question

@@ -93,6 +93,39 @@ r1 = engine.execute("SELECT COUNT(*) AS cnt FROM person")
 r2 = engine.execute("SELECT name FROM person ORDER BY age DESC LIMIT 2")
 ```
 
+## Python example: Unity Catalog integration
+
+Connect to [Unity Catalog](https://github.com/unitycatalog/unitycatalog) (OSS) to discover and query Delta Lake or Parquet tables directly:
+
+```python
+from lance_graph import UnityCatalog
+
+# Connect to Unity Catalog
+uc = UnityCatalog("http://localhost:8080/api/2.1/unity-catalog")
+
+# Browse catalog metadata
+catalogs = uc.list_catalogs()
+schemas = uc.list_schemas("unity")
+tables = uc.list_tables("unity", "default")
+table = uc.get_table("unity", "default", "marksheet")
+print(table.columns())  # [{"name": "id", "type_name": "INT", ...}, ...]
+
+# Auto-register tables (Delta + Parquet) and query via SQL
+engine = uc.create_sql_engine("unity", "default")
+result = engine.execute("SELECT * FROM marksheet WHERE mark > 80")
+print(result.to_pandas())
+
+# For cloud storage (S3, Azure, GCS), pass storage options:
+uc = UnityCatalog(
+    "http://localhost:8080/api/2.1/unity-catalog",
+    storage_options={
+        "aws_access_key_id": "...",
+        "aws_secret_access_key": "...",
+        "aws_region": "us-east-1",
+    }
+)
+```
+
 ## Knowledge Graph CLI & API
 
 The `knowledge_graph` package layers a simple Lance-backed knowledge graph
