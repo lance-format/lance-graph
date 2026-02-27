@@ -92,7 +92,7 @@ pub enum CatalogError {
     NotFound(String),
     /// Authentication or authorization failure.
     AuthError(String),
-    /// Invalid or unparseable response from the catalog server.
+    /// Invalid or unparsable response from the catalog server.
     InvalidResponse(String),
     /// Failed to map a catalog type to an Arrow type.
     TypeMappingError(String),
