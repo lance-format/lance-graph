@@ -88,6 +88,11 @@ DistanceMetric = _bindings.graph.DistanceMetric
 
 DirNamespace = _bindings.graph.DirNamespace
 
+UnityCatalog = _bindings.graph.UnityCatalog
+CatalogInfo = _bindings.graph.CatalogInfo
+SchemaInfo = _bindings.graph.SchemaInfo
+TableInfo = _bindings.graph.TableInfo
+
 __all__ = [
     "GraphConfig",
     "GraphConfigBuilder",
@@ -99,6 +104,10 @@ __all__ = [
     "VectorSearch",
     "DistanceMetric",
     "DirNamespace",
+    "UnityCatalog",
+    "CatalogInfo",
+    "SchemaInfo",
+    "TableInfo",
 ]
 
 __version__ = _bindings.__version__

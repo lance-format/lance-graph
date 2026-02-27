@@ -282,7 +282,7 @@ impl VectorSearch {
 }
 
 /// Convert GraphError to PyErr
-fn graph_error_to_pyerr(err: RustGraphError) -> PyErr {
+pub(crate) fn graph_error_to_pyerr(err: RustGraphError) -> PyErr {
     match &err {
         RustGraphError::ParseError { .. }
         | RustGraphError::ConfigError { .. }
@@ -1533,6 +1533,16 @@ impl SqlEngine {
     }
 }
 
+impl SqlEngine {
+    /// Create SqlEngine from a pre-built SessionContext.
+    /// Used internally by catalog integration (UnityCatalog.create_sql_engine).
+    pub(crate) fn from_context(ctx: SessionContext) -> Self {
+        Self {
+            context: Arc::new(ctx),
+        }
+    }
+}
+
 /// Register graph functionality with the Python module
 pub fn register_graph_module(py: Python, parent_module: &Bound<'_, PyModule>) -> PyResult<()> {
     let graph_module = PyModule::new(py, "graph")?;
@@ -1547,6 +1557,8 @@ pub fn register_graph_module(py: Python, parent_module: &Bound<'_, PyModule>) ->
     graph_module.add_class::<SqlEngine>()?;
     graph_module.add_class::<VectorSearch>()?;
     graph_module.add_class::<PyDirNamespace>()?;
+
+    crate::catalog::register_catalog_module(py, &graph_module)?;
 
     parent_module.add_submodule(&graph_module)?;
     Ok(())

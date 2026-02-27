@@ -2,6 +2,7 @@ use std::sync::LazyLock;
 
 use pyo3::prelude::*;
 
+mod catalog;
 mod executor;
 mod graph;
 mod namespace;
