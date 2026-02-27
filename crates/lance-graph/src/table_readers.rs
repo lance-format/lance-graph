@@ -6,6 +6,7 @@
 //! - [`ParquetTableReader`] — reads Parquet tables using DataFusion's built-in support.
 //! - [`DeltaTableReader`] — reads Delta Lake tables (behind `delta` feature flag).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -35,6 +36,7 @@ impl TableReader for ParquetTableReader {
         table_name: &str,
         table_info: &TableInfo,
         _schema: arrow_schema::SchemaRef,
+        _storage_options: &HashMap<String, String>,
     ) -> CatalogResult<()> {
         let location = table_info.storage_location.as_deref().ok_or_else(|| {
             CatalogError::Other(format!("Table '{}' has no storage_location", table_name))
@@ -60,6 +62,8 @@ impl TableReader for ParquetTableReader {
 /// Opens the Delta table at the storage location and registers it as a
 /// DataFusion `TableProvider`, enabling full SQL query support including
 /// time travel, schema evolution, and partition pruning.
+///
+/// Supports cloud storage (S3, Azure, GCS) via `storage_options`.
 #[cfg(feature = "delta")]
 pub struct DeltaTableReader;
 
@@ -80,6 +84,7 @@ impl TableReader for DeltaTableReader {
         table_name: &str,
         table_info: &TableInfo,
         _schema: arrow_schema::SchemaRef,
+        storage_options: &HashMap<String, String>,
     ) -> CatalogResult<()> {
         let location = table_info.storage_location.as_deref().ok_or_else(|| {
             CatalogError::Other(format!("Table '{}' has no storage_location", table_name))
@@ -92,7 +97,12 @@ impl TableReader for DeltaTableReader {
             ))
         })?;
 
-        let delta_table = deltalake::open_table(table_url).await.map_err(|e| {
+        let delta_table = if storage_options.is_empty() {
+            deltalake::open_table(table_url).await
+        } else {
+            deltalake::open_table_with_storage_options(table_url, storage_options.clone()).await
+        }
+        .map_err(|e| {
             CatalogError::Other(format!(
                 "Failed to open Delta table '{}' at '{}': {}",
                 table_name, location, e

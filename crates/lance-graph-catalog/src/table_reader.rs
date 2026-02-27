@@ -7,6 +7,8 @@
 //! data format reading from catalog metadata. Each implementation handles
 //! one or more data formats and is reusable across any [`CatalogProvider`].
 
+use std::collections::HashMap;
+
 use arrow_schema::SchemaRef;
 use async_trait::async_trait;
 use datafusion::execution::context::SessionContext;
@@ -47,11 +49,14 @@ pub trait TableReader: Send + Sync {
     /// * `table_name` - The name to register the table under (already lowercased).
     /// * `table_info` - Full table metadata from the catalog, including `storage_location`.
     /// * `schema` - Arrow schema derived from the table's column definitions.
+    /// * `storage_options` - Key-value pairs for cloud storage credentials
+    ///   (e.g., `azure_storage_account_name`, `aws_access_key_id`, etc.).
     async fn register_table(
         &self,
         ctx: &SessionContext,
         table_name: &str,
         table_info: &TableInfo,
         schema: SchemaRef,
+        storage_options: &HashMap<String, String>,
     ) -> CatalogResult<()>;
 }

@@ -7,6 +7,7 @@
 //! `getPageSourceProvider()`, this struct provides a convenient entry point
 //! for users who want to browse a catalog and register tables for querying.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use arrow_schema::SchemaRef;
@@ -25,6 +26,11 @@ use crate::table_reader::TableReader;
 /// catalog. It delegates metadata operations to the catalog provider and data
 /// reading to the appropriate table reader based on the table's data format.
 ///
+/// # Storage Options
+///
+/// Cloud storage credentials (S3, Azure, GCS) are passed via `storage_options`
+/// and forwarded to each [`TableReader`] during table registration.
+///
 /// # Extensibility
 ///
 /// - Swap the catalog: pass a different `CatalogProvider` (e.g., AWS Glue).
@@ -34,23 +40,45 @@ use crate::table_reader::TableReader;
 ///
 /// ```no_run
 /// # use lance_graph_catalog::connector::Connector;
-/// # use lance_graph_catalog::{UnityCatalogConfig, UnityCatalogProvider};
+/// # use std::collections::HashMap;
 /// # fn example() {
-/// // let catalog = Arc::new(UnityCatalogProvider::new(config)?);
-/// // let readers = default_table_readers(); // from lance-graph crate
-/// // let connector = Connector::new(catalog, readers);
-/// // let tables = connector.list_tables("unity", "default").await?;
+/// // let connector = Connector::new(catalog, readers)
+/// //     .with_storage_options(HashMap::from([
+/// //         ("aws_access_key_id".into(), "...".into()),
+/// //         ("aws_secret_access_key".into(), "...".into()),
+/// //     ]));
 /// # }
 /// ```
 pub struct Connector {
     catalog: Arc<dyn CatalogProvider>,
     readers: Vec<Arc<dyn TableReader>>,
+    storage_options: HashMap<String, String>,
 }
 
 impl Connector {
     /// Create a new connector with the given catalog provider and table readers.
     pub fn new(catalog: Arc<dyn CatalogProvider>, readers: Vec<Arc<dyn TableReader>>) -> Self {
-        Self { catalog, readers }
+        Self {
+            catalog,
+            readers,
+            storage_options: HashMap::new(),
+        }
+    }
+
+    /// Set storage options for cloud storage access (S3, Azure, GCS).
+    ///
+    /// Common keys:
+    /// - S3: `aws_access_key_id`, `aws_secret_access_key`, `aws_region`
+    /// - Azure: `azure_storage_account_name`, `azure_storage_account_key`
+    /// - GCS: `google_service_account_path`
+    pub fn with_storage_options(mut self, options: HashMap<String, String>) -> Self {
+        self.storage_options = options;
+        self
+    }
+
+    /// Get the current storage options.
+    pub fn storage_options(&self) -> &HashMap<String, String> {
+        &self.storage_options
     }
 
     /// Get a reference to the underlying catalog provider.
@@ -118,7 +146,7 @@ impl Connector {
     /// 1. Retrieves full table metadata (including columns) from the catalog.
     /// 2. Converts columns to an Arrow schema.
     /// 3. Finds an appropriate [`TableReader`] for the table's data format.
-    /// 4. Registers the table in the session context.
+    /// 4. Registers the table in the session context with storage options for cloud access.
     ///
     /// If no reader matches the table's format, falls back to registering an
     /// empty `MemTable` with the correct schema (schema-only, for planning).
@@ -175,8 +203,14 @@ impl Connector {
 
         match reader {
             Some(r) => {
-                r.register_table(ctx, &normalized_name, &table_info, arrow_schema.clone())
-                    .await?;
+                r.register_table(
+                    ctx,
+                    &normalized_name,
+                    &table_info,
+                    arrow_schema.clone(),
+                    &self.storage_options,
+                )
+                .await?;
             }
             None => {
                 // No reader — register schema-only (empty MemTable for planning)

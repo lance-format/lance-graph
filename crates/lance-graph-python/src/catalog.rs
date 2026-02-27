@@ -3,13 +3,14 @@
 
 //! Python bindings for the catalog integration.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use lance_graph::sql_catalog::build_context_from_connector;
+use lance_graph::table_readers::default_table_readers;
 use lance_graph::{
     CatalogInfo, Connector, SchemaInfo, TableInfo, UnityCatalogConfig, UnityCatalogProvider,
 };
-use lance_graph::table_readers::default_table_readers;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -168,6 +169,13 @@ impl PyTableInfo {
 /// >>> catalogs = uc.list_catalogs()
 /// >>> engine = uc.create_sql_engine("unity", "default")
 /// >>> result = engine.execute("SELECT * FROM my_table LIMIT 10")
+///
+/// For cloud storage (S3, Azure, GCS):
+///
+/// >>> uc = UnityCatalog(
+/// ...     "http://localhost:8080/api/2.1/unity-catalog",
+/// ...     storage_options={"azure_storage_account_name": "myaccount", "azure_storage_account_key": "..."}
+/// ... )
 #[pyclass(name = "UnityCatalog", module = "lance.graph")]
 pub struct PyUnityCatalog {
     connector: Arc<Connector>,
@@ -186,9 +194,19 @@ impl PyUnityCatalog {
     ///     Bearer token for authentication
     /// timeout : int, optional
     ///     Request timeout in seconds
+    /// storage_options : dict, optional
+    ///     Key-value pairs for cloud storage credentials.
+    ///     S3: aws_access_key_id, aws_secret_access_key, aws_region
+    ///     Azure: azure_storage_account_name, azure_storage_account_key
+    ///     GCS: google_service_account_path
     #[new]
-    #[pyo3(signature = (base_url, token=None, timeout=None))]
-    fn new(base_url: &str, token: Option<&str>, timeout: Option<u64>) -> PyResult<Self> {
+    #[pyo3(signature = (base_url, token=None, timeout=None, storage_options=None))]
+    fn new(
+        base_url: &str,
+        token: Option<&str>,
+        timeout: Option<u64>,
+        storage_options: Option<HashMap<String, String>>,
+    ) -> PyResult<Self> {
         let mut config = UnityCatalogConfig::new(base_url);
         if let Some(t) = token {
             config = config.with_token(t);
@@ -200,7 +218,10 @@ impl PyUnityCatalog {
         let provider = UnityCatalogProvider::new(config)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let readers = default_table_readers();
-        let connector = Connector::new(Arc::new(provider), readers);
+        let mut connector = Connector::new(Arc::new(provider), readers);
+        if let Some(opts) = storage_options {
+            connector = connector.with_storage_options(opts);
+        }
 
         Ok(Self {
             connector: Arc::new(connector),
