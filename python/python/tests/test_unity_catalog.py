@@ -11,7 +11,6 @@ Unity Catalog server and are skipped by default.
 import pytest
 from lance_graph import CatalogInfo, SchemaInfo, SqlEngine, TableInfo, UnityCatalog
 
-
 # ==========================================================================
 # Unit tests — verify Python class construction and repr
 # ==========================================================================
@@ -50,7 +49,9 @@ class TestConnectionErrors:
     def test_list_catalogs_connection_refused(self):
         """Connecting to a non-existent server raises RuntimeError."""
         uc = UnityCatalog("http://localhost:1/api/2.1/unity-catalog", timeout=1)
-        with pytest.raises(RuntimeError, match="connection error|Connection refused|error"):
+        with pytest.raises(
+            RuntimeError, match="connection error|Connection refused|error"
+        ):
             uc.list_catalogs()
 
     def test_list_schemas_connection_refused(self):
@@ -82,9 +83,7 @@ class TestConnectionErrors:
 def _uc_available():
     """Check if a UC server is running on localhost:8080."""
     try:
-        uc = UnityCatalog(
-            "http://localhost:8080/api/2.1/unity-catalog", timeout=2
-        )
+        uc = UnityCatalog("http://localhost:8080/api/2.1/unity-catalog", timeout=2)
         uc.list_catalogs()
         return True
     except Exception:
@@ -136,9 +135,7 @@ class TestUnityCatalogBrowsing:
         if not tables:
             pytest.skip("No tables in the first schema")
 
-        table = uc.get_table(
-            catalogs[0].name, schemas[0].name, tables[0].name
-        )
+        table = uc.get_table(catalogs[0].name, schemas[0].name, tables[0].name)
         assert table.name == tables[0].name
         assert table.num_columns > 0
         cols = table.columns()

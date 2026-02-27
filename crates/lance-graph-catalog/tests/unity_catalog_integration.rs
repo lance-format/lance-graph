@@ -171,7 +171,10 @@ async fn test_get_schema_not_found() {
         .await;
 
     let provider = setup_provider(&server).await;
-    let err = provider.get_schema("unity", "nonexistent").await.unwrap_err();
+    let err = provider
+        .get_schema("unity", "nonexistent")
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("not found"));
 }
 
@@ -302,10 +305,7 @@ async fn test_get_table_with_columns() {
     assert_eq!(table.columns[2].type_name, "DOUBLE");
     assert_eq!(table.columns[2].comment, None);
 
-    assert_eq!(
-        table.properties.get("delta.minReaderVersion").unwrap(),
-        "1"
-    );
+    assert_eq!(table.properties.get("delta.minReaderVersion").unwrap(), "1");
 }
 
 #[tokio::test]
@@ -359,10 +359,7 @@ async fn test_table_to_arrow_schema() {
 
     assert_eq!(schema.fields().len(), 3);
     assert_eq!(schema.field(0).name(), "id");
-    assert_eq!(
-        *schema.field(0).data_type(),
-        arrow_schema::DataType::Int64
-    );
+    assert_eq!(*schema.field(0).data_type(), arrow_schema::DataType::Int64);
     assert!(!schema.field(0).is_nullable());
     assert_eq!(schema.field(1).name(), "value");
     assert_eq!(
@@ -398,7 +395,10 @@ async fn test_bearer_token_sent() {
 
     Mock::given(method("GET"))
         .and(path("/catalogs"))
-        .and(wiremock::matchers::header("Authorization", "Bearer my-token"))
+        .and(wiremock::matchers::header(
+            "Authorization",
+            "Bearer my-token",
+        ))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "catalogs": [{ "name": "unity" }]
         })))
@@ -459,8 +459,7 @@ async fn test_data_source_format_parsing() {
 
 #[tokio::test]
 async fn test_connection_error_on_bad_url() {
-    let config = UnityCatalogConfig::new("http://localhost:1")
-        .with_timeout(1);
+    let config = UnityCatalogConfig::new("http://localhost:1").with_timeout(1);
     let provider = UnityCatalogProvider::new(config).unwrap();
     let err = provider.list_catalogs().await.unwrap_err();
     assert!(err.to_string().contains("connection error"));

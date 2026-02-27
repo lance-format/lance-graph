@@ -13,7 +13,10 @@ use arrow_schema::SchemaRef;
 use datafusion::datasource::MemTable;
 use datafusion::execution::context::SessionContext;
 
-use crate::catalog_provider::{CatalogError, CatalogInfo, CatalogProvider, CatalogResult, DataSourceFormat, SchemaInfo, TableInfo};
+use crate::catalog_provider::{
+    CatalogError, CatalogInfo, CatalogProvider, CatalogResult, DataSourceFormat, SchemaInfo,
+    TableInfo,
+};
 use crate::table_reader::TableReader;
 
 /// Bundles a [`CatalogProvider`] with [`TableReader`]s for convenient use.
@@ -46,10 +49,7 @@ pub struct Connector {
 
 impl Connector {
     /// Create a new connector with the given catalog provider and table readers.
-    pub fn new(
-        catalog: Arc<dyn CatalogProvider>,
-        readers: Vec<Arc<dyn TableReader>>,
-    ) -> Self {
+    pub fn new(catalog: Arc<dyn CatalogProvider>, readers: Vec<Arc<dyn TableReader>>) -> Self {
         Self { catalog, readers }
     }
 

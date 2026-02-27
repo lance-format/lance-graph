@@ -103,12 +103,12 @@ pub enum CatalogError {
 impl std::fmt::Display for CatalogError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CatalogError::ConnectionError(msg) => write!(f, "Catalog connection error: {}", msg),
-            CatalogError::NotFound(msg) => write!(f, "Not found: {}", msg),
-            CatalogError::AuthError(msg) => write!(f, "Auth error: {}", msg),
-            CatalogError::InvalidResponse(msg) => write!(f, "Invalid response: {}", msg),
-            CatalogError::TypeMappingError(msg) => write!(f, "Type mapping error: {}", msg),
-            CatalogError::Other(msg) => write!(f, "Catalog error: {}", msg),
+            Self::ConnectionError(msg) => write!(f, "Catalog connection error: {}", msg),
+            Self::NotFound(msg) => write!(f, "Not found: {}", msg),
+            Self::AuthError(msg) => write!(f, "Auth error: {}", msg),
+            Self::InvalidResponse(msg) => write!(f, "Invalid response: {}", msg),
+            Self::TypeMappingError(msg) => write!(f, "Type mapping error: {}", msg),
+            Self::Other(msg) => write!(f, "Catalog error: {}", msg),
         }
     }
 }
@@ -145,11 +145,7 @@ pub trait CatalogProvider: Send + Sync {
     async fn list_schemas(&self, catalog_name: &str) -> CatalogResult<Vec<SchemaInfo>>;
 
     /// Get information about a specific schema.
-    async fn get_schema(
-        &self,
-        catalog_name: &str,
-        schema_name: &str,
-    ) -> CatalogResult<SchemaInfo>;
+    async fn get_schema(&self, catalog_name: &str, schema_name: &str) -> CatalogResult<SchemaInfo>;
 
     /// List all tables within a schema.
     async fn list_tables(

@@ -57,9 +57,9 @@ impl UnityCatalogProvider {
         if let Some(timeout) = config.timeout_secs {
             builder = builder.timeout(std::time::Duration::from_secs(timeout));
         }
-        let client = builder
-            .build()
-            .map_err(|e| CatalogError::ConnectionError(format!("Failed to build HTTP client: {}", e)))?;
+        let client = builder.build().map_err(|e| {
+            CatalogError::ConnectionError(format!("Failed to build HTTP client: {}", e))
+        })?;
 
         Ok(Self { config, client })
     }
@@ -86,9 +86,7 @@ impl UnityCatalogProvider {
                 resource_name
             )));
         }
-        if status == reqwest::StatusCode::UNAUTHORIZED
-            || status == reqwest::StatusCode::FORBIDDEN
-        {
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             let body = resp.text().await.unwrap_or_default();
             return Err(CatalogError::AuthError(format!(
                 "HTTP {}: {}",
@@ -186,7 +184,7 @@ fn default_nullable() -> bool {
 
 impl From<UcCatalog> for CatalogInfo {
     fn from(uc: UcCatalog) -> Self {
-        CatalogInfo {
+        Self {
             name: uc.name,
             comment: uc.comment,
             properties: uc.properties,
@@ -198,7 +196,7 @@ impl From<UcCatalog> for CatalogInfo {
 
 impl From<UcSchema> for SchemaInfo {
     fn from(uc: UcSchema) -> Self {
-        SchemaInfo {
+        Self {
             name: uc.name,
             catalog_name: uc.catalog_name,
             comment: uc.comment,
@@ -211,7 +209,7 @@ impl From<UcSchema> for SchemaInfo {
 
 impl From<UcTable> for TableInfo {
     fn from(uc: UcTable) -> Self {
-        TableInfo {
+        Self {
             name: uc.name,
             catalog_name: uc.catalog_name,
             schema_name: uc.schema_name,
@@ -242,7 +240,7 @@ impl From<UcTable> for TableInfo {
 
 impl From<UcColumn> for ColumnInfo {
     fn from(uc: UcColumn) -> Self {
-        ColumnInfo {
+        Self {
             name: uc.name,
             type_text: uc.type_text,
             type_name: uc.type_name,
@@ -299,11 +297,7 @@ impl CatalogProvider for UnityCatalogProvider {
         Ok(body.schemas.into_iter().map(Into::into).collect())
     }
 
-    async fn get_schema(
-        &self,
-        catalog_name: &str,
-        schema_name: &str,
-    ) -> CatalogResult<SchemaInfo> {
+    async fn get_schema(&self, catalog_name: &str, schema_name: &str) -> CatalogResult<SchemaInfo> {
         let full_name = format!("{}.{}", catalog_name, schema_name);
         let resp = self
             .request(reqwest::Method::GET, &format!("/schemas/{}", full_name))
@@ -324,10 +318,7 @@ impl CatalogProvider for UnityCatalogProvider {
     ) -> CatalogResult<Vec<TableInfo>> {
         let resp = self
             .request(reqwest::Method::GET, "/tables")
-            .query(&[
-                ("catalog_name", catalog_name),
-                ("schema_name", schema_name),
-            ])
+            .query(&[("catalog_name", catalog_name), ("schema_name", schema_name)])
             .send()
             .await
             .map_err(|e| CatalogError::ConnectionError(e.to_string()))?;

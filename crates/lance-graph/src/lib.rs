@@ -69,6 +69,6 @@ pub use lance_graph_catalog::{UnityCatalogConfig, UnityCatalogProvider};
 pub use lance_vector_search::VectorSearch;
 pub use query::{CypherQuery, ExecutionStrategy};
 pub use sql_query::SqlQuery;
-pub use table_readers::{default_table_readers, ParquetTableReader};
 #[cfg(feature = "delta")]
 pub use table_readers::DeltaTableReader;
+pub use table_readers::{default_table_readers, ParquetTableReader};

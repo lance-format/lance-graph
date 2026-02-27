@@ -37,10 +37,7 @@ impl TableReader for ParquetTableReader {
         _schema: arrow_schema::SchemaRef,
     ) -> CatalogResult<()> {
         let location = table_info.storage_location.as_deref().ok_or_else(|| {
-            CatalogError::Other(format!(
-                "Table '{}' has no storage_location",
-                table_name
-            ))
+            CatalogError::Other(format!("Table '{}' has no storage_location", table_name))
         })?;
 
         ctx.register_parquet(
@@ -85,10 +82,7 @@ impl TableReader for DeltaTableReader {
         _schema: arrow_schema::SchemaRef,
     ) -> CatalogResult<()> {
         let location = table_info.storage_location.as_deref().ok_or_else(|| {
-            CatalogError::Other(format!(
-                "Table '{}' has no storage_location",
-                table_name
-            ))
+            CatalogError::Other(format!("Table '{}' has no storage_location", table_name))
         })?;
 
         let table_url = url::Url::parse(location).map_err(|e| {
