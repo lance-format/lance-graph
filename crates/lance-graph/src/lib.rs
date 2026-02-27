@@ -48,6 +48,9 @@ pub mod parser;
 pub mod query;
 pub mod semantic;
 pub mod simple_executor;
+pub mod sql_catalog;
+pub mod sql_query;
+pub mod table_readers;
 
 /// Maximum allowed hops for variable-length relationship expansion (e.g., *1..N)
 pub const MAX_VARIABLE_LENGTH_HOPS: u32 = 20;
@@ -57,5 +60,16 @@ pub use error::{GraphError, Result};
 pub use lance_graph_catalog::{
     DirNamespace, GraphSourceCatalog, InMemoryCatalog, SimpleTableSource,
 };
+// Catalog provider re-exports
+pub use lance_graph_catalog::{
+    CatalogError, CatalogInfo, CatalogProvider, CatalogResult, ColumnInfo, Connector,
+    DataSourceFormat, SchemaInfo, TableInfo, TableReader, TableType,
+};
+#[cfg(feature = "unity-catalog")]
+pub use lance_graph_catalog::{UnityCatalogConfig, UnityCatalogProvider};
 pub use lance_vector_search::VectorSearch;
 pub use query::{CypherQuery, ExecutionStrategy};
+pub use sql_query::SqlQuery;
+#[cfg(feature = "delta")]
+pub use table_readers::DeltaTableReader;
+pub use table_readers::{default_table_readers, ParquetTableReader};

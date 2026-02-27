@@ -1,4 +1,12 @@
-"""Python bindings for the ``lance-graph`` crate."""
+"""Python bindings for the ``lance-graph`` crate.
+
+Provides two query interfaces:
+
+- **Cypher**: ``CypherQuery`` and ``CypherEngine`` for graph-pattern queries
+  (requires a ``GraphConfig`` with node/relationship mappings).
+- **SQL**: ``SqlQuery`` and ``SqlEngine`` for standard SQL queries executed
+  directly against datasets via DataFusion (no ``GraphConfig`` needed).
+"""
 
 from __future__ import annotations
 
@@ -72,21 +80,34 @@ GraphConfig = _bindings.graph.GraphConfig
 GraphConfigBuilder = _bindings.graph.GraphConfigBuilder
 CypherQuery = _bindings.graph.CypherQuery
 CypherEngine = _bindings.graph.CypherEngine
+SqlQuery = _bindings.graph.SqlQuery
+SqlEngine = _bindings.graph.SqlEngine
 ExecutionStrategy = _bindings.graph.ExecutionStrategy
 VectorSearch = _bindings.graph.VectorSearch
 DistanceMetric = _bindings.graph.DistanceMetric
 
 DirNamespace = _bindings.graph.DirNamespace
 
+UnityCatalog = _bindings.graph.UnityCatalog
+CatalogInfo = _bindings.graph.CatalogInfo
+SchemaInfo = _bindings.graph.SchemaInfo
+TableInfo = _bindings.graph.TableInfo
+
 __all__ = [
     "GraphConfig",
     "GraphConfigBuilder",
     "CypherQuery",
     "CypherEngine",
+    "SqlQuery",
+    "SqlEngine",
     "ExecutionStrategy",
     "VectorSearch",
     "DistanceMetric",
     "DirNamespace",
+    "UnityCatalog",
+    "CatalogInfo",
+    "SchemaInfo",
+    "TableInfo",
 ]
 
 __version__ = _bindings.__version__
