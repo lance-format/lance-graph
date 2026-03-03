@@ -11,11 +11,11 @@ keywords = ["lance", "graph", "cypher", "query", "datafusion"]
 categories = ["database", "data-structures", "science"]
 
 [dependencies]
-arrow = { version = "56.2", features = ["prettyprint"] }
-arrow-array = "56.2"
-arrow-schema = "56.2"
+arrow = { version = "57", features = ["prettyprint"] }
+arrow-array = "57"
+arrow-schema = "57"
 async-trait = "0.1"
-datafusion = { version = "50.3", default-features = false, features = [
+datafusion = { version = "51", default-features = false, features = [
     "nested_expressions",
     "regex_expressions",
     "unicode_expressions",
@@ -25,15 +25,15 @@ datafusion = { version = "50.3", default-features = false, features = [
     "string_expressions",
     "parquet",
 ] }
-datafusion-common = "50.3"
-datafusion-expr = "50.3"
-datafusion-sql = "50.3"
-datafusion-functions-aggregate = "50.3"
+datafusion-common = "51"
+datafusion-expr = "51"
+datafusion-sql = "51"
+datafusion-functions-aggregate = "51"
 futures = "0.3"
 lance-graph-catalog = { path = "../lance-graph-catalog", version = "0.5.3" }
-lance = "1.0.0"
-lance-linalg = "1.0.0"
-lance-namespace = "1.0.1"
+lance = "2"
+lance-linalg = "2"
+lance-namespace = "2"
 nom = "7.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -48,6 +48,7 @@ delta = ["dep:deltalake", "dep:url"]
 
 [dev-dependencies]
 futures = "0.3"
-lance-arrow = "1.0.0"
+lance-arrow = "2"
+lance-index = "2"
 tempfile = "3"
 tokio = { version = "1.37", features = ["macros", "rt-multi-thread"] }

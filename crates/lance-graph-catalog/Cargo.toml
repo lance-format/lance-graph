@@ -11,10 +11,10 @@ keywords = ["lance", "graph", "catalog", "namespace"]
 categories = ["database", "data-structures", "science"]
 
 [dependencies]
-arrow-schema = "56.2"
+arrow-schema = "57"
 async-trait = "0.1"
-datafusion = { version = "50.3", default-features = false }
-lance-namespace = "1.0.1"
+datafusion = { version = "51", default-features = false }
+lance-namespace = "2"
 reqwest = { version = "0.12", features = ["json"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
