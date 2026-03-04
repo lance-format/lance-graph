@@ -9,9 +9,6 @@ use crate::config::GraphConfig;
 use crate::error::{GraphError, Result};
 use crate::logical_plan::LogicalPlanner;
 use crate::parser::parse_cypher_query;
-use crate::simple_executor::{
-    to_df_boolean_expr_simple, to_df_order_by_expr_simple, to_df_value_expr_simple, PathExecutor,
-};
 use arrow_array::RecordBatch;
 use arrow_schema::{Field, Schema, SchemaRef};
 use lance_graph_catalog::DirNamespace;
@@ -58,8 +55,6 @@ pub enum ExecutionStrategy {
     /// Use DataFusion query planner (default, full feature support)
     #[default]
     DataFusion,
-    /// Use simple single-table executor (legacy, limited features)
-    Simple,
     /// Use Lance native executor (not yet implemented)
     LanceNative,
 }
@@ -174,8 +169,6 @@ impl CypherQuery {
     ///     .with_config(config);
     /// // Use the default DataFusion strategy
     /// let result = query.execute(datasets, None).await?;
-    /// // Use the Simple strategy explicitly
-    /// let result = query.execute(datasets, Some(ExecutionStrategy::Simple)).await?;
     /// ```
     pub async fn execute(
         &self,
@@ -185,7 +178,6 @@ impl CypherQuery {
         let strategy = strategy.unwrap_or_default();
         match strategy {
             ExecutionStrategy::DataFusion => self.execute_datafusion(datasets).await,
-            ExecutionStrategy::Simple => self.execute_simple(datasets).await,
             ExecutionStrategy::LanceNative => Err(GraphError::UnsupportedFeature {
                 feature: "Lance native execution strategy is not yet implemented".to_string(),
                 location: snafu::Location::new(file!(), line!(), column!()),
@@ -231,12 +223,6 @@ impl CypherQuery {
                 self.execute_with_catalog_and_context(std::sync::Arc::new(catalog), ctx)
                     .await
             }
-            ExecutionStrategy::Simple => Err(GraphError::UnsupportedFeature {
-                feature:
-                    "Simple execution strategy is not supported for namespace-backed execution"
-                        .to_string(),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            }),
             ExecutionStrategy::LanceNative => Err(GraphError::UnsupportedFeature {
                 feature: "Lance native execution strategy is not yet implemented".to_string(),
                 location: snafu::Location::new(file!(), line!(), column!()),
@@ -926,174 +912,6 @@ impl CypherQuery {
         Ok(output)
     }
 
-    /// Execute simple single-table queries (legacy implementation)
-    ///
-    /// This method supports basic projection/filter/limit workflows on a single table.
-    /// For full query support including joins and complex patterns, use `execute()` instead.
-    ///
-    /// Note: This implementation is retained for backward compatibility and simple use cases.
-    pub async fn execute_simple(
-        &self,
-        datasets: HashMap<String, arrow::record_batch::RecordBatch>,
-    ) -> Result<arrow::record_batch::RecordBatch> {
-        use crate::semantic::SemanticAnalyzer;
-        use arrow::compute::concat_batches;
-        use datafusion::datasource::MemTable;
-        use datafusion::prelude::*;
-        use std::sync::Arc;
-
-        // Require a config for now, even if we don't fully exploit it yet
-        let config = self.require_config()?.clone();
-
-        // Ensure we don't silently ignore unsupported features (e.g. scalar functions).
-        let mut analyzer = SemanticAnalyzer::new(config);
-        let semantic = analyzer.analyze(&self.ast, &self.parameters)?;
-        if !semantic.errors.is_empty() {
-            return Err(GraphError::PlanError {
-                message: format!("Semantic analysis failed:\n{}", semantic.errors.join("\n")),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            });
-        }
-
-        if datasets.is_empty() {
-            return Err(GraphError::PlanError {
-                message: "No input datasets provided".to_string(),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            });
-        }
-
-        // Create DataFusion context and register all provided tables
-        // Normalize schemas and table names for case-insensitive behavior
-        let ctx = SessionContext::new();
-        for (name, batch) in &datasets {
-            let normalized_batch = normalize_record_batch(batch)?;
-            let table = MemTable::try_new(
-                normalized_batch.schema(),
-                vec![vec![normalized_batch.clone()]],
-            )
-            .map_err(|e| GraphError::PlanError {
-                message: format!("Failed to create DataFusion table: {}", e),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
-
-            // Register with lowercase table name
-            let normalized_name = name.to_lowercase();
-            ctx.register_table(&normalized_name, Arc::new(table))
-                .map_err(|e| GraphError::PlanError {
-                    message: format!("Failed to register table '{}': {}", name, e),
-                    location: snafu::Location::new(file!(), line!(), column!()),
-                })?;
-        }
-
-        // Try to execute a path (1+ hops) if the query is a simple pattern
-        if let Some(df) = self.try_execute_path_generic(&ctx).await? {
-            let batches = df.collect().await.map_err(|e| GraphError::PlanError {
-                message: format!("Failed to collect results: {}", e),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
-            if batches.is_empty() {
-                let schema = datasets.values().next().unwrap().schema();
-                return Ok(arrow_array::RecordBatch::new_empty(schema));
-            }
-            let merged = concat_batches(&batches[0].schema(), &batches).map_err(|e| {
-                GraphError::PlanError {
-                    message: format!("Failed to concatenate result batches: {}", e),
-                    location: snafu::Location::new(file!(), line!(), column!()),
-                }
-            })?;
-            return Ok(merged);
-        }
-
-        // Fallback: single-table style query on the first provided table
-        let (table_name, batch) = datasets.iter().next().unwrap();
-        let schema = batch.schema();
-
-        // Start a DataFrame from the registered table
-        let mut df = ctx
-            .table(table_name)
-            .await
-            .map_err(|e| GraphError::PlanError {
-                message: format!("Failed to create DataFrame for '{}': {}", table_name, e),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
-
-        // Apply WHERE if present (limited support: simple comparisons on a single column)
-        if let Some(where_clause) = &self.ast.where_clause {
-            if let Some(filter_expr) = to_df_boolean_expr_simple(&where_clause.expression) {
-                df = df.filter(filter_expr).map_err(|e| GraphError::PlanError {
-                    message: format!("Failed to apply filter: {}", e),
-                    location: snafu::Location::new(file!(), line!(), column!()),
-                })?;
-            }
-        }
-
-        // Build projection from RETURN clause
-        let proj_exprs: Vec<Expr> = self
-            .ast
-            .return_clause
-            .items
-            .iter()
-            .map(|item| {
-                let expr = to_df_value_expr_simple(&item.expression);
-                if let Some(alias) = &item.alias {
-                    expr.alias(alias)
-                } else {
-                    expr
-                }
-            })
-            .collect();
-        if !proj_exprs.is_empty() {
-            df = df.select(proj_exprs).map_err(|e| GraphError::PlanError {
-                message: format!("Failed to project: {}", e),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
-        }
-
-        // Apply DISTINCT
-        if self.ast.return_clause.distinct {
-            df = df.distinct().map_err(|e| GraphError::PlanError {
-                message: format!("Failed to apply DISTINCT: {}", e),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
-        }
-
-        // Apply ORDER BY if present
-        if let Some(order_by) = &self.ast.order_by {
-            let sort_expr = to_df_order_by_expr_simple(&order_by.items);
-            df = df.sort(sort_expr).map_err(|e| GraphError::PlanError {
-                message: format!("Failed to apply ORDER BY: {}", e),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
-        }
-
-        // Apply SKIP/OFFSET and LIMIT if present
-        if self.ast.skip.is_some() || self.ast.limit.is_some() {
-            let offset = self.ast.skip.unwrap_or(0) as usize;
-            let fetch = self.ast.limit.map(|l| l as usize);
-            df = df.limit(offset, fetch).map_err(|e| GraphError::PlanError {
-                message: format!("Failed to apply SKIP/LIMIT: {}", e),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
-        }
-
-        // Collect results and concat into a single RecordBatch
-        let batches = df.collect().await.map_err(|e| GraphError::PlanError {
-            message: format!("Failed to collect results: {}", e),
-            location: snafu::Location::new(file!(), line!(), column!()),
-        })?;
-
-        if batches.is_empty() {
-            // Return an empty batch with the source schema
-            return Ok(arrow_array::RecordBatch::new_empty(schema));
-        }
-
-        let merged =
-            concat_batches(&batches[0].schema(), &batches).map_err(|e| GraphError::PlanError {
-                message: format!("Failed to concatenate result batches: {}", e),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            })?;
-        Ok(merged)
-    }
 
     /// Get all node labels referenced in this query
     pub fn referenced_node_labels(&self) -> Vec<String> {
@@ -1254,97 +1072,6 @@ impl CypherQuery {
 }
 
 impl CypherQuery {
-    // Generic path executor (N-hop) entrypoint.
-    async fn try_execute_path_generic(
-        &self,
-        ctx: &datafusion::prelude::SessionContext,
-    ) -> Result<Option<datafusion::dataframe::DataFrame>> {
-        use crate::ast::GraphPattern;
-        // Only support single MATCH clause for path execution
-
-        let match_clause = match self.ast.reading_clauses.as_slice() {
-            [ReadingClause::Match(mc)] => mc,
-            _ => return Ok(None),
-        };
-        let path = match match_clause.patterns.as_slice() {
-            [GraphPattern::Path(p)] if !p.segments.is_empty() => p,
-            _ => return Ok(None),
-        };
-        let cfg = self.require_config()?;
-
-        // Handle single-segment variable-length paths by unrolling ranges (*1..N, capped)
-        if path.segments.len() == 1 {
-            if let Some(length_range) = &path.segments[0].relationship.length {
-                let cap: u32 = crate::MAX_VARIABLE_LENGTH_HOPS;
-                let min_len = length_range.min.unwrap_or(1).max(1);
-                let max_len = length_range.max.unwrap_or(cap);
-
-                if min_len > max_len {
-                    return Err(GraphError::InvalidPattern {
-                        message: format!(
-                            "Invalid variable-length range: min {:?} greater than max {:?}",
-                            length_range.min, length_range.max
-                        ),
-                        location: snafu::Location::new(file!(), line!(), column!()),
-                    });
-                }
-
-                if max_len > cap {
-                    return Err(GraphError::UnsupportedFeature {
-                        feature: format!(
-                            "Variable-length paths with length > {} are not supported (got {:?}..{:?})",
-                            cap, length_range.min, length_range.max
-                        ),
-                        location: snafu::Location::new(file!(), line!(), column!()),
-                    });
-                }
-
-                use datafusion::dataframe::DataFrame;
-                let mut union_df: Option<DataFrame> = None;
-
-                for hops in min_len..=max_len {
-                    // Build a fixed-length synthetic path by repeating the single segment
-                    let mut synthetic = crate::ast::PathPattern {
-                        start_node: path.start_node.clone(),
-                        segments: Vec::with_capacity(hops as usize),
-                    };
-
-                    for i in 0..hops {
-                        let mut seg = path.segments[0].clone();
-                        // Drop variables to avoid alias collisions on repeated hops
-                        seg.relationship.variable = None;
-                        if (i + 1) < hops {
-                            seg.end_node.variable = None; // intermediate hop
-                        }
-                        // Clear length spec for this fixed hop
-                        seg.relationship.length = None;
-                        synthetic.segments.push(seg);
-                    }
-
-                    let exec = PathExecutor::new(ctx, cfg, &synthetic)?;
-                    let mut df = exec.build_chain().await?;
-                    df = exec.apply_where(df, &self.ast)?;
-                    df = exec.apply_return(df, &self.ast)?;
-
-                    union_df = Some(match union_df {
-                        Some(acc) => acc.union(df).map_err(|e| GraphError::PlanError {
-                            message: format!("Failed to UNION variable-length paths: {}", e),
-                            location: snafu::Location::new(file!(), line!(), column!()),
-                        })?,
-                        None => df,
-                    });
-                }
-
-                return Ok(union_df);
-            }
-        }
-
-        let exec = PathExecutor::new(ctx, cfg, path)?;
-        let df = exec.build_chain().await?;
-        let df = exec.apply_where(df, &self.ast)?;
-        let df = exec.apply_return(df, &self.ast)?;
-        Ok(Some(df))
-    }
 }
 
 /// Builder for constructing Cypher queries programmatically
@@ -1564,9 +1291,9 @@ mod tests {
             .with_config(cfg);
 
         let mut data = HashMap::new();
-        data.insert("people".to_string(), batch);
+        data.insert("Person".to_string(), batch);
 
-        let out = q.execute_simple(data).await.unwrap();
+        let out = q.execute(data, None).await.unwrap();
         assert_eq!(out.num_rows(), 2);
         let names = out
             .column(0)
@@ -1635,7 +1362,7 @@ mod tests {
         data.insert("Person".to_string(), people);
         data.insert("KNOWS".to_string(), knows);
 
-        let out = q.execute_simple(data).await.unwrap();
+        let out = q.execute(data, None).await.unwrap();
         // Expect two rows: Bob, Carol (the targets)
         let names = out
             .column(0)
@@ -1681,9 +1408,9 @@ mod tests {
             .with_config(cfg);
 
         let mut data = HashMap::new();
-        data.insert("people".to_string(), batch);
+        data.insert("Person".to_string(), batch);
 
-        let out = q.execute_simple(data).await.unwrap();
+        let out = q.execute(data, None).await.unwrap();
         let ages = out.column(1).as_any().downcast_ref::<Int64Array>().unwrap();
         let collected: Vec<i64> = (0..out.num_rows()).map(|i| ages.value(i)).collect();
         assert_eq!(collected, vec![28, 29, 34, 42]);
@@ -1720,9 +1447,9 @@ mod tests {
                 .with_config(cfg);
 
         let mut data = HashMap::new();
-        data.insert("people".to_string(), batch);
+        data.insert("Person".to_string(), batch);
 
-        let out = q.execute_simple(data).await.unwrap();
+        let out = q.execute(data, None).await.unwrap();
         assert_eq!(out.num_rows(), 2);
         let ages = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
         let collected: Vec<i64> = (0..out.num_rows()).map(|i| ages.value(i)).collect();
@@ -1752,105 +1479,13 @@ mod tests {
             .with_config(cfg);
 
         let mut data = HashMap::new();
-        data.insert("people".to_string(), batch);
+        data.insert("Person".to_string(), batch);
 
-        let out = q.execute_simple(data).await.unwrap();
+        let out = q.execute(data, None).await.unwrap();
         assert_eq!(out.num_rows(), 2);
         let ages = out.column(0).as_any().downcast_ref::<Int64Array>().unwrap();
         let collected: Vec<i64> = (0..out.num_rows()).map(|i| ages.value(i)).collect();
         assert_eq!(collected, vec![30, 40]);
-    }
-
-    #[tokio::test]
-    async fn test_execute_datafusion_pipeline() {
-        use arrow_array::{Int64Array, RecordBatch, StringArray};
-        use arrow_schema::{DataType, Field, Schema};
-        use std::sync::Arc;
-
-        // Create test data
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("id", DataType::Int64, false),
-            Field::new("name", DataType::Utf8, false),
-            Field::new("age", DataType::Int64, false),
-        ]));
-
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![
-                Arc::new(Int64Array::from(vec![1, 2, 3])),
-                Arc::new(StringArray::from(vec!["Alice", "Bob", "Charlie"])),
-                Arc::new(Int64Array::from(vec![25, 35, 30])),
-            ],
-        )
-        .unwrap();
-
-        let cfg = GraphConfig::builder()
-            .with_node_label("Person", "id")
-            .build()
-            .unwrap();
-
-        // Test simple node query with DataFusion pipeline
-        let query = CypherQuery::new("MATCH (p:Person) WHERE p.age > 30 RETURN p.name")
-            .unwrap()
-            .with_config(cfg);
-
-        let mut datasets = HashMap::new();
-        datasets.insert("Person".to_string(), batch);
-
-        // Execute using the new DataFusion pipeline
-        let result = query.execute_datafusion(datasets.clone()).await;
-
-        match &result {
-            Ok(batch) => {
-                println!(
-                    "DataFusion result: {} rows, {} columns",
-                    batch.num_rows(),
-                    batch.num_columns()
-                );
-                if batch.num_rows() > 0 {
-                    println!("First row data: {:?}", batch.slice(0, 1));
-                }
-            }
-            Err(e) => {
-                println!("DataFusion execution failed: {:?}", e);
-            }
-        }
-
-        // For comparison, try legacy execution
-        let legacy_result = query.execute_simple(datasets).await.unwrap();
-        println!(
-            "Legacy result: {} rows, {} columns",
-            legacy_result.num_rows(),
-            legacy_result.num_columns()
-        );
-
-        let result = result.unwrap();
-
-        // Verify correct filtering: should return 1 row (Bob with age > 30)
-        assert_eq!(
-            result.num_rows(),
-            1,
-            "Expected 1 row after filtering WHERE p.age > 30"
-        );
-
-        // Verify correct projection: should return 1 column (name)
-        assert_eq!(
-            result.num_columns(),
-            1,
-            "Expected 1 column after projection RETURN p.name"
-        );
-
-        // Verify correct data: should contain "Bob"
-        let names = result
-            .column(0)
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .unwrap();
-        assert_eq!(
-            names.value(0),
-            "Bob",
-            "Expected filtered result to contain Bob"
-        );
     }
 
     #[tokio::test]
@@ -2325,15 +1960,6 @@ mod tests {
             .collect();
         values.sort();
         assert_eq!(values, vec!["Bob".to_string(), "David".to_string()]);
-
-        let err = query
-            .execute_with_namespace(namespace, Some(ExecutionStrategy::Simple))
-            .await
-            .expect_err("simple strategy not supported");
-        assert!(
-            matches!(err, GraphError::UnsupportedFeature { .. }),
-            "expected unsupported feature error, got {err:?}"
-        );
     }
 
     #[tokio::test]
@@ -2358,7 +1984,7 @@ mod tests {
             .unwrap()
             .with_config(cfg);
 
-        let result = query.execute_simple(datasets).await;
+        let result = query.execute(datasets, None).await;
 
         assert!(result.is_err());
         match result {

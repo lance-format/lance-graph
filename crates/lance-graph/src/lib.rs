@@ -47,7 +47,6 @@ pub mod parameter_substitution;
 pub mod parser;
 pub mod query;
 pub mod semantic;
-pub mod simple_executor;
 pub mod sql_catalog;
 pub mod sql_query;
 pub mod table_readers;

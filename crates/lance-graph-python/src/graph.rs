@@ -46,8 +46,6 @@ use crate::RT;
 pub enum ExecutionStrategy {
     /// Use DataFusion query planner (default, full feature support)
     DataFusion,
-    /// Use simple single-table executor (legacy, limited features)
-    Simple,
     /// Use Lance native executor (not yet implemented)
     LanceNative,
 }
@@ -56,7 +54,6 @@ impl From<ExecutionStrategy> for RustExecutionStrategy {
     fn from(strategy: ExecutionStrategy) -> Self {
         match strategy {
             ExecutionStrategy::DataFusion => RustExecutionStrategy::DataFusion,
-            ExecutionStrategy::Simple => RustExecutionStrategy::Simple,
             ExecutionStrategy::LanceNative => RustExecutionStrategy::LanceNative,
         }
     }
@@ -548,7 +545,7 @@ impl CypherQuery {
     ///
     /// >>> # Explicit strategy
     /// >>> from lance.graph import ExecutionStrategy
-    /// >>> result = query.execute(datasets, strategy=ExecutionStrategy.Simple)
+    /// >>> result = query.execute(datasets, strategy=ExecutionStrategy.DataFusion)
     #[pyo3(signature = (datasets, strategy=None))]
     fn execute(
         &self,

@@ -72,7 +72,7 @@ fn execute_cypher_query(
     datasets: HashMap<String, RecordBatch>,
 ) -> RecordBatch {
     rt.block_on(async move {
-        q.execute(datasets, Some(ExecutionStrategy::Simple))
+        q.execute(datasets, None)
             .await
             .unwrap()
     })
