@@ -912,7 +912,6 @@ impl CypherQuery {
         Ok(output)
     }
 
-
     /// Get all node labels referenced in this query
     pub fn referenced_node_labels(&self) -> Vec<String> {
         let mut labels = Vec::new();
@@ -1069,9 +1068,6 @@ impl CypherQuery {
         // Step 2: Apply vector search reranking
         vector_search.search(&candidates).await
     }
-}
-
-impl CypherQuery {
 }
 
 /// Builder for constructing Cypher queries programmatically
