@@ -47,13 +47,7 @@ unity-catalog = ["lance-graph-catalog/unity-catalog"]
 delta = ["dep:deltalake", "dep:url"]
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["async", "async_tokio", "html_reports"] }
 futures = "0.3"
 lance-arrow = "1.0.0"
-lance-index = "1.0.0"
 tempfile = "3"
 tokio = { version = "1.37", features = ["macros", "rt-multi-thread"] }
-
-[[bench]]
-name = "graph_execution"
-harness = false

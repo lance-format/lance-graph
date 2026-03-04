@@ -4084,7 +4084,6 @@ dependencies = [
  "arrow-array",
  "arrow-schema",
  "async-trait",
- "criterion",
  "datafusion",
  "datafusion-common",
  "datafusion-expr",
@@ -4095,7 +4094,6 @@ dependencies = [
  "lance",
  "lance-arrow",
  "lance-graph-catalog",
- "lance-index",
  "lance-linalg",
  "lance-namespace",
  "nom 7.1.3",
@@ -4105,6 +4103,20 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "lance-graph-benches"
+version = "0.1.0"
+dependencies = [
+ "arrow-array",
+ "arrow-schema",
+ "criterion",
+ "futures",
+ "lance",
+ "lance-graph",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
