@@ -1,0 +1,28 @@
+[package]
+name = "lance-graph-cli"
+version = "0.5.3"
+edition = "2021"
+license = "Apache-2.0"
+description = "CLI for lance-graph: run Cypher and SQL queries from the command line"
+
+[[bin]]
+name = "lgraph"
+path = "src/main.rs"
+
+[dependencies]
+lance-graph = { path = "../lance-graph" }
+lance = "1.0.0"
+lance-namespace = "1.0.1"
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+arrow = { version = "56.2", features = ["prettyprint", "json"] }
+arrow-array = "56.2"
+arrow-cast = "56.2"
+arrow-json = "56.2"
+arrow-csv = "56.2"
+arrow-schema = "56.2"
+datafusion = { version = "50.3", default-features = false, features = ["parquet"] }
+anyhow = "1"
