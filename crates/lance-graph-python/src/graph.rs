@@ -494,6 +494,9 @@ impl CypherQuery {
     /// ----------
     /// datasets : dict
     ///     Dictionary mapping table names to Lance datasets
+    /// dialect : str, optional
+    ///     SQL dialect to use. One of "default", "spark", "postgresql", "mysql", "sqlite".
+    ///     Defaults to "default" (generic DataFusion SQL).
     ///
     /// Returns
     /// -------
@@ -504,7 +507,29 @@ impl CypherQuery {
     /// ------
     /// RuntimeError
     ///     If SQL generation fails
-    fn to_sql(&self, py: Python, datasets: &Bound<'_, PyDict>) -> PyResult<String> {
+    /// ValueError
+    ///     If an invalid dialect is specified
+    #[pyo3(signature = (datasets, dialect=None))]
+    fn to_sql(
+        &self,
+        py: Python,
+        datasets: &Bound<'_, PyDict>,
+        dialect: Option<&str>,
+    ) -> PyResult<String> {
+        let sql_dialect = match dialect {
+            None | Some("default") => None,
+            Some("spark") => Some(lance_graph::SqlDialect::Spark),
+            Some("postgresql") | Some("postgres") => Some(lance_graph::SqlDialect::PostgreSql),
+            Some("mysql") => Some(lance_graph::SqlDialect::MySql),
+            Some("sqlite") => Some(lance_graph::SqlDialect::Sqlite),
+            Some(other) => {
+                return Err(PyValueError::new_err(format!(
+                    "Unknown SQL dialect: '{}'. Valid options: 'default', 'spark', 'postgresql', 'mysql', 'sqlite'",
+                    other
+                )));
+            }
+        };
+
         // Convert datasets to Arrow RecordBatch map
         let arrow_datasets = python_datasets_to_batches(datasets)?;
 
@@ -513,7 +538,7 @@ impl CypherQuery {
 
         // Execute via runtime
         let sql = RT
-            .block_on(Some(py), inner_query.to_sql(arrow_datasets))?
+            .block_on(Some(py), inner_query.to_sql(arrow_datasets, sql_dialect))?
             .map_err(graph_error_to_pyerr)?;
 
         Ok(sql)

@@ -280,10 +280,10 @@ impl CypherQuery {
         self.explain_internal(Arc::new(catalog), ctx).await
     }
 
-    /// Convert the Cypher query to a DataFusion SQL string
+    /// Convert the Cypher query to a SQL string in the specified dialect.
     ///
     /// This method generates a SQL string that corresponds to the DataFusion logical plan
-    /// derived from the Cypher query. It uses the `datafusion-sql` unparser.
+    /// derived from the Cypher query, using the specified SQL dialect for unparsing.
     ///
     /// **WARNING**: This method is experimental and the generated SQL dialect may change.
     ///
@@ -293,16 +293,20 @@ impl CypherQuery {
     ///
     /// # Arguments
     /// * `datasets` - HashMap of table name to RecordBatch (nodes and relationships)
+    /// * `dialect` - The SQL dialect to use for generating the output SQL.
+    ///   Defaults to `SqlDialect::Default` (generic DataFusion SQL).
+    ///   Use `SqlDialect::Spark` for Spark SQL, `SqlDialect::PostgreSql`, etc.
     ///
     /// # Returns
-    /// A SQL string representing the query
+    /// A SQL string representing the query in the specified dialect
     pub async fn to_sql(
         &self,
         datasets: HashMap<String, arrow::record_batch::RecordBatch>,
+        dialect: Option<crate::spark_dialect::SqlDialect>,
     ) -> Result<String> {
-        use datafusion_sql::unparser::plan_to_sql;
         use std::sync::Arc;
 
+        let dialect = dialect.unwrap_or_default();
         let _config = self.require_config()?;
 
         // Build catalog and context from datasets using the helper
@@ -323,11 +327,16 @@ impl CypherQuery {
                 location: snafu::Location::new(file!(), line!(), column!()),
             })?;
 
-        // Unparse to SQL
-        let sql_ast = plan_to_sql(&optimized_plan).map_err(|e| GraphError::PlanError {
-            message: format!("Failed to unparse plan to SQL: {}", e),
-            location: snafu::Location::new(file!(), line!(), column!()),
-        })?;
+        // Unparse to SQL using the specified dialect
+        let dialect_unparser = dialect.unparser();
+        let unparser = dialect_unparser.as_unparser();
+        let sql_ast =
+            unparser
+                .plan_to_sql(&optimized_plan)
+                .map_err(|e| GraphError::PlanError {
+                    message: format!("Failed to unparse plan to SQL: {}", e),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
 
         Ok(sql_ast.to_string())
     }
@@ -1852,7 +1861,7 @@ mod tests {
             .unwrap()
             .with_config(cfg);
 
-        let sql = query.to_sql(datasets).await.unwrap();
+        let sql = query.to_sql(datasets, None).await.unwrap();
         println!("Generated SQL: {}", sql);
 
         assert!(sql.contains("SELECT"));

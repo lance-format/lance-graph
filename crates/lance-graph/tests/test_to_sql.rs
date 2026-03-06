@@ -97,7 +97,7 @@ async fn test_to_sql_simple_node_scan() {
         .unwrap()
         .with_config(config);
 
-    let sql = query.to_sql(datasets).await.unwrap();
+    let sql = query.to_sql(datasets, None).await.unwrap();
 
     // Verify SQL contains expected elements
     assert!(
@@ -129,7 +129,7 @@ async fn test_to_sql_with_filter() {
         .unwrap()
         .with_config(config);
 
-    let sql = query.to_sql(datasets).await.unwrap();
+    let sql = query.to_sql(datasets, None).await.unwrap();
 
     // Verify SQL contains filter condition
     assert!(sql.contains("SELECT"), "SQL should contain SELECT");
@@ -157,7 +157,7 @@ async fn test_to_sql_with_multiple_properties() {
         .unwrap()
         .with_config(config);
 
-    let sql = query.to_sql(datasets).await.unwrap();
+    let sql = query.to_sql(datasets, None).await.unwrap();
 
     // Verify all columns are present
     assert!(sql.contains("name"), "SQL should contain name");
@@ -187,7 +187,7 @@ async fn test_to_sql_with_relationship() {
     .unwrap()
     .with_config(config);
 
-    let sql = query.to_sql(datasets).await.unwrap();
+    let sql = query.to_sql(datasets, None).await.unwrap();
 
     // Verify SQL contains join
     let sql_upper = sql.to_uppercase();
@@ -223,7 +223,7 @@ async fn test_to_sql_with_relationship_filter() {
         .unwrap()
         .with_config(config);
 
-    let sql = query.to_sql(datasets).await.unwrap();
+    let sql = query.to_sql(datasets, None).await.unwrap();
 
     // Verify SQL contains filter on relationship property
     assert!(sql.contains("salary"), "SQL should reference salary");
@@ -246,7 +246,7 @@ async fn test_to_sql_with_order_by() {
         .unwrap()
         .with_config(config);
 
-    let sql = query.to_sql(datasets).await.unwrap();
+    let sql = query.to_sql(datasets, None).await.unwrap();
 
     // Verify SQL contains ORDER BY
     assert!(
@@ -272,7 +272,7 @@ async fn test_to_sql_with_limit() {
         .unwrap()
         .with_config(config);
 
-    let sql = query.to_sql(datasets).await.unwrap();
+    let sql = query.to_sql(datasets, None).await.unwrap();
 
     // Verify SQL contains LIMIT
     assert!(
@@ -298,7 +298,7 @@ async fn test_to_sql_with_distinct() {
         .unwrap()
         .with_config(config);
 
-    let sql = query.to_sql(datasets).await.unwrap();
+    let sql = query.to_sql(datasets, None).await.unwrap();
 
     // Verify SQL is generated successfully
     // Note: DISTINCT might be optimized away by DataFusion's optimizer in some cases
@@ -323,7 +323,7 @@ async fn test_to_sql_with_alias() {
             .unwrap()
             .with_config(config);
 
-    let sql = query.to_sql(datasets).await.unwrap();
+    let sql = query.to_sql(datasets, None).await.unwrap();
 
     // Verify SQL contains aliases
     assert!(
@@ -358,7 +358,7 @@ async fn test_to_sql_complex_query() {
     .unwrap()
     .with_config(config);
 
-    let sql = query.to_sql(datasets).await.unwrap();
+    let sql = query.to_sql(datasets, None).await.unwrap();
 
     // Verify complex query elements
     assert!(sql.contains("SELECT"), "SQL should contain SELECT");
@@ -390,7 +390,7 @@ async fn test_to_sql_missing_config() {
     let query = CypherQuery::new("MATCH (p:Person) RETURN p.name").unwrap();
     // Note: No config set
 
-    let result = query.to_sql(datasets).await;
+    let result = query.to_sql(datasets, None).await;
 
     // Should fail without config
     assert!(result.is_err(), "to_sql should fail without config");
@@ -413,7 +413,7 @@ async fn test_to_sql_empty_datasets() {
         .unwrap()
         .with_config(config);
 
-    let result = query.to_sql(datasets).await;
+    let result = query.to_sql(datasets, None).await;
 
     // Should fail with empty datasets
     assert!(result.is_err(), "to_sql should fail with empty datasets");
