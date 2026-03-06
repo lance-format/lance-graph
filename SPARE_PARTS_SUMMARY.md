@@ -288,6 +288,34 @@ string-level validation. Everything below it is geometric thinking.
 
 ---
 
+## PREREQUISITE — BEFORE ANY CODE RUNS
+
+```bash
+rustup default 1.93.1
+rustc --version          # MUST say 1.93.1
+rustup target list --installed  # MUST include x86_64-unknown-linux-gnu
+
+RUSTFLAGS="-C target-cpu=native -C target-feature=+avx512f,+avx512bw,+avx512vpopcntdq"
+export RUSTFLAGS
+
+cd ../rustynum && cargo check 2>&1 | tail -5
+# If this fails → the environment is wrong, not the code.
+# Do NOT "fix" code to work around a missing toolchain.
+```
+
+**AVX-512 VPOPCNTDQ is not optional.** It's how rustynum computes Hamming
+distance in 2 cycles. Without it, `hamming_distance_bytes` and `popcount_bytes`
+don't compile. The agent sees unresolved imports, thinks "simd is deprecated,"
+and starts deleting things. The simd isn't deprecated — the toolchain is wrong.
+
+**The cascade**: Wrong Rust version → rustynum SIMD intrinsics fail → agent
+treats it as "pre-existing error" → papers over it → touches n8n-core → touches
+hot_path → reintroduces JSON → five cascading violations from one wrong toolchain.
+
+**If rustynum doesn't compile, STOP. Fix the environment. Do not touch code.**
+
+---
+
 ## Regime Boundary — DO NOT CROSS
 
 ```
