@@ -288,6 +288,51 @@ string-level validation. Everything below it is geometric thinking.
 
 ---
 
+## Regime Boundary — DO NOT CROSS
+
+```
+STAR CHART SIDE (you work here):
+  src/query/lance_parser/       ← stolen parts, adapted imports
+  src/query/error.rs            ← stolen error handling
+  src/query/mod.rs              ← rewired exports
+
+THINKING MESH SIDE (you do NOT touch):
+  src/spo/                      ← SPO engine
+  src/graph/spo/                ← graph primitives
+  src/storage/bind_space.rs     ← Container system
+  src/container/                ← fingerprints
+  src/query/datafusion.rs       ← existing DataFusion integration
+  src/query/cognitive_udfs.rs   ← Hamming/NARS UDFs
+```
+
+The adapter plate (semantic.rs) sits ON the boundary. It faces the star chart
+side. Its back is to the mesh. It does not turn around.
+
+### Tripwires — If You Find Yourself Doing This, STOP
+
+- Adding `use crate::spo` in lance_parser/ → **STOP.** Wrong side of boundary.
+- Adding `use crate::storage::bind_space` in lance_parser/ → **STOP.**
+- Writing a function that takes LogicalOperator and returns QueryHit → **STOP.** That's step 5.
+- Modifying SpoBuilder or SpoStore → **STOP.** That's mesh code.
+- Adding new variants to LogicalOperator → **STOP.** That's step 4.
+- Writing a test that calls both DataFusion and SPO → **STOP.** That's step 6.
+
+### Task Order — DO NOT SKIP AHEAD
+
+| Step | PR | What | Side |
+|------|----|------|------|
+| 1 | This PR | Land stolen parser + error (star chart side only, zero mesh coupling) | Star chart |
+| 2 | This PR | Land AcceptAllCatalog stub (proves adapter plate compiles in isolation) | Boundary |
+| 3 | Separate PR | BindSpaceCatalog (first mesh coupling, minimal) | Boundary → mesh peek |
+| 4 | Separate PR | Projection verb parser extensions (mesh grammar enters star chart) | Star chart |
+| 5 | Separate PR | IR compiler (adapter plate gets a back door to the mesh) | Boundary opens |
+| 6 | Separate PR | Ground truth comparison (both paths wired, convergence test) | Both sides |
+
+Each step proves the previous one compiles and passes before the next begins.
+The boundary relaxes one bolt at a time, never all at once.
+
+---
+
 ## Open Ends
 
 ### 1. Parser + Bouncer Theft — Packaging
