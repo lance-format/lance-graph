@@ -68,6 +68,7 @@ fn create_graph_config() -> GraphConfig {
         .with_node_mapping(NodeMapping {
             label: "Person".to_string(),
             id_field: "id".to_string(),
+            table_name: None,
             property_fields: vec!["name".to_string()],
             filter_conditions: None,
         })

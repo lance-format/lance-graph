@@ -6,21 +6,34 @@ use anyhow::{bail, Context, Result};
 use crate::config::LGraphConfig;
 use crate::output::OutputFormat;
 
+struct TableEntry {
+    label: String,
+    table: String,
+    kind: &'static str, // "node" or "relationship"
+}
+
 pub async fn run(config: &LGraphConfig, format: OutputFormat) -> Result<()> {
     if let Some(ns_path) = &config.namespace {
-        // List tables based on graph config node/relationship labels.
         let graph = config.build_graph_config()?;
         match graph {
             Some(gc) => {
-                let mut table_names: Vec<String> = Vec::new();
+                let mut entries: Vec<TableEntry> = Vec::new();
                 for nm in gc.node_mappings.values() {
-                    table_names.push(nm.label.clone());
+                    entries.push(TableEntry {
+                        label: nm.label.clone(),
+                        table: nm.resolved_table_name().to_string(),
+                        kind: "node",
+                    });
                 }
                 for rm in gc.relationship_mappings.values() {
-                    table_names.push(rm.relationship_type.clone());
+                    entries.push(TableEntry {
+                        label: rm.relationship_type.clone(),
+                        table: rm.resolved_table_name().to_string(),
+                        kind: "relationship",
+                    });
                 }
-                table_names.sort();
-                print_table_list(&table_names, &format!("namespace: {ns_path}"), format);
+                entries.sort_by(|a, b| a.label.cmp(&b.label));
+                print_entries(&entries, &format!("namespace: {ns_path}"), format);
             }
             None => {
                 eprintln!("No [graph] section in config. Cannot determine tables in namespace.");
@@ -32,24 +45,28 @@ pub async fn run(config: &LGraphConfig, format: OutputFormat) -> Result<()> {
             .await
             .context("setting up catalog")?;
         let catalog_list = ctx.catalog_names();
-        let mut table_names = Vec::new();
+        let mut entries: Vec<TableEntry> = Vec::new();
         for catalog_name in &catalog_list {
             if let Some(catalog) = ctx.catalog(catalog_name) {
                 for schema_name in catalog.schema_names() {
                     if let Some(schema) = catalog.schema(&schema_name) {
                         for name in schema.table_names() {
-                            table_names.push(name);
+                            entries.push(TableEntry {
+                                label: name.clone(),
+                                table: name,
+                                kind: "table",
+                            });
                         }
                     }
                 }
             }
         }
-        table_names.sort();
+        entries.sort_by(|a, b| a.label.cmp(&b.label));
         let source = format!(
             "catalog: {}.{}",
             catalog_cfg.catalog_name, catalog_cfg.schema_name
         );
-        print_table_list(&table_names, &source, format);
+        print_entries(&entries, &source, format);
     } else {
         bail!("No data source configured. Set 'namespace' or '[catalog]' in your config file.");
     }
@@ -57,24 +74,34 @@ pub async fn run(config: &LGraphConfig, format: OutputFormat) -> Result<()> {
     Ok(())
 }
 
-fn print_table_list(tables: &[String], source: &str, format: OutputFormat) {
+fn print_entries(entries: &[TableEntry], source: &str, format: OutputFormat) {
     match format {
         OutputFormat::Json | OutputFormat::Jsonl => {
-            for name in tables {
-                let obj = serde_json::json!({ "table": name });
+            for e in entries {
+                let mut obj = serde_json::json!({
+                    "label": e.label,
+                    "kind": e.kind,
+                });
+                if e.table != e.label {
+                    obj["table"] = serde_json::Value::String(e.table.clone());
+                }
                 println!("{}", serde_json::to_string(&obj).unwrap());
             }
         }
         OutputFormat::Table => {
             println!("Tables ({source}):");
-            for name in tables {
-                println!("  {name}");
+            for e in entries {
+                if e.table != e.label {
+                    println!("  {} -> {} ({})", e.label, e.table, e.kind);
+                } else {
+                    println!("  {} ({})", e.label, e.kind);
+                }
             }
         }
         OutputFormat::Csv => {
-            println!("table");
-            for name in tables {
-                println!("{name}");
+            println!("label,table,kind");
+            for e in entries {
+                println!("{},{},{}", e.label, e.table, e.kind);
             }
         }
     }

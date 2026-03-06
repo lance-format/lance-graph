@@ -63,6 +63,12 @@ pub struct NodeMapping {
     pub label: String,
     /// Field name that serves as the node identifier
     pub id_field: String,
+    /// Optional table name override. When set, the engine reads data from this
+    /// table instead of using the label as the table name.
+    /// E.g., label="Person" with table_name="person_entity" reads from the
+    /// "person_entity" table but exposes it as `:Person` in Cypher.
+    #[serde(default)]
+    pub table_name: Option<String>,
     /// Optional fields that define node properties
     pub property_fields: Vec<String>,
     /// Optional filter conditions for this node type
@@ -78,6 +84,12 @@ pub struct RelationshipMapping {
     pub source_id_field: String,
     /// Field containing the target node ID
     pub target_id_field: String,
+    /// Optional table name override. When set, the engine reads data from this
+    /// table instead of using the relationship type as the table name.
+    /// E.g., relationship_type="WORKS_AT" with table_name="employment_info"
+    /// reads from "employment_info" but exposes it as `[:WORKS_AT]` in Cypher.
+    #[serde(default)]
+    pub table_name: Option<String>,
     /// Optional field containing the relationship type
     pub type_field: Option<String>,
     /// Optional fields that define relationship properties
@@ -204,6 +216,7 @@ impl GraphConfigBuilder {
             NodeMapping {
                 label: label_str, // Keep original case for display
                 id_field: id_field.into(),
+                table_name: None,
                 property_fields: Vec::new(),
                 filter_conditions: None,
             },
@@ -233,6 +246,7 @@ impl GraphConfigBuilder {
                 relationship_type: type_str, // Keep original case for display
                 source_id_field: source_field.into(),
                 target_id_field: target_field.into(),
+                table_name: None,
                 type_field: None,
                 property_fields: Vec::new(),
                 filter_conditions: None,
@@ -284,9 +298,22 @@ impl NodeMapping {
         Self {
             label: label.into(),
             id_field: id_field.into(),
+            table_name: None,
             property_fields: Vec::new(),
             filter_conditions: None,
         }
+    }
+
+    /// The actual table name to read data from.
+    /// Returns `table_name` if set, otherwise falls back to `label`.
+    pub fn resolved_table_name(&self) -> &str {
+        self.table_name.as_deref().unwrap_or(&self.label)
+    }
+
+    /// Set an explicit table name that differs from the node label.
+    pub fn with_table_name<S: Into<String>>(mut self, table_name: S) -> Self {
+        self.table_name = Some(table_name.into());
+        self
     }
 
     /// Add property fields to the mapping
@@ -309,10 +336,23 @@ impl RelationshipMapping {
             relationship_type: rel_type.into(),
             source_id_field: source_field.into(),
             target_id_field: target_field.into(),
+            table_name: None,
             type_field: None,
             property_fields: Vec::new(),
             filter_conditions: None,
         }
+    }
+
+    /// The actual table name to read data from.
+    /// Returns `table_name` if set, otherwise falls back to `relationship_type`.
+    pub fn resolved_table_name(&self) -> &str {
+        self.table_name.as_deref().unwrap_or(&self.relationship_type)
+    }
+
+    /// Set an explicit table name that differs from the relationship type.
+    pub fn with_table_name<S: Into<String>>(mut self, table_name: S) -> Self {
+        self.table_name = Some(table_name.into());
+        self
     }
 
     /// Set the type field for this relationship
@@ -366,6 +406,7 @@ mod tests {
             NodeMapping {
                 label: "Person".to_string(),
                 id_field: "".to_string(),
+                table_name: None,
                 property_fields: Vec::new(),
                 filter_conditions: None,
             },

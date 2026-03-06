@@ -48,7 +48,38 @@ source_field = "person_id"
 target_field = "company_id"
 ```
 
-The `namespace` path should point to a directory containing `.lance` datasets. Table names in the `[graph]` section must match the dataset directory names.
+The `namespace` path should point to a directory containing `.lance` datasets. By default, the section key (e.g., `Person`) is used as both the Cypher label and the table name.
+
+### Table name aliases
+
+When your physical table name differs from the graph label you want to use in Cypher, use the `table` field:
+
+```toml
+namespace = "/path/to/tables"
+
+# Cypher label "Person" reads from the "person_entity" table
+[graph.nodes.Person]
+id_field = "person_id"
+table = "person_entity"
+
+# Cypher label "Company" reads from a table also called "Company" (default)
+[graph.nodes.Company]
+id_field = "company_id"
+
+# Cypher type "WORKS_AT" reads from the "employment_info" table
+[graph.relationships.WORKS_AT]
+source_field = "person_id"
+target_field = "company_id"
+table = "employment_info"
+```
+
+Now you can query using the graph labels:
+
+```cypher
+MATCH (p:Person)-[:WORKS_AT]->(c:Company) RETURN p.name, c.name
+```
+
+The engine reads from `person_entity` and `employment_info` under the hood.
 
 ### Unity Catalog
 
@@ -67,8 +98,8 @@ aws_secret_access_key = "..."
 
 The `[graph]` section maps your tabular data to a property graph model. It is required for Cypher queries but optional for SQL.
 
-- **Nodes**: each entry names a node label and its ID column.
-- **Relationships**: each entry names a relationship type and its source/target ID columns.
+- **Nodes**: each entry names a node label and its ID column. Use `table` to map to a different physical table.
+- **Relationships**: each entry names a relationship type and its source/target ID columns. Use `table` to map to a different physical table.
 
 ## Commands
 

@@ -4,7 +4,7 @@
 //! Configuration file loading for lgraph CLI.
 
 use anyhow::{Context, Result};
-use lance_graph::GraphConfig;
+use lance_graph::{GraphConfig, NodeMapping, RelationshipMapping};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -45,12 +45,18 @@ pub struct GraphSection {
 #[derive(Debug, Deserialize)]
 pub struct NodeConfig {
     pub id_field: String,
+    /// Optional: actual table name if different from the node label.
+    /// E.g., label "Person" can read from table "person_entity".
+    pub table: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct RelationshipConfig {
     pub source_field: String,
     pub target_field: String,
+    /// Optional: actual table name if different from the relationship type.
+    /// E.g., type "WORKS_AT" can read from table "employment_info".
+    pub table: Option<String>,
 }
 
 impl LGraphConfig {
@@ -72,10 +78,19 @@ impl LGraphConfig {
 
         let mut builder = GraphConfig::builder();
         for (label, node) in &section.nodes {
-            builder = builder.with_node_label(label, &node.id_field);
+            let mut mapping = NodeMapping::new(label, &node.id_field);
+            if let Some(table) = &node.table {
+                mapping = mapping.with_table_name(table);
+            }
+            builder = builder.with_node_mapping(mapping);
         }
         for (rel_type, rel) in &section.relationships {
-            builder = builder.with_relationship(rel_type, &rel.source_field, &rel.target_field);
+            let mut mapping =
+                RelationshipMapping::new(rel_type, &rel.source_field, &rel.target_field);
+            if let Some(table) = &rel.table {
+                mapping = mapping.with_table_name(table);
+            }
+            builder = builder.with_relationship_mapping(mapping);
         }
         let config = builder.build().context("building GraphConfig")?;
         Ok(Some(config))
@@ -100,8 +115,12 @@ pub fn template_config() -> &'static str {
 # aws_secret_access_key = "..."
 
 # Graph schema mappings (required for Cypher queries)
+# Each section key is the graph label used in Cypher queries.
+# Use "table" to map a label to a different physical table name.
+#
 # [graph.nodes.Person]
 # id_field = "person_id"
+# table = "person_entity"  # optional: reads from "person_entity" table
 #
 # [graph.nodes.Company]
 # id_field = "company_id"
@@ -109,5 +128,6 @@ pub fn template_config() -> &'static str {
 # [graph.relationships.WORKS_AT]
 # source_field = "person_id"
 # target_field = "company_id"
+# table = "employment_info"  # optional: reads from "employment_info" table
 "#
 }
