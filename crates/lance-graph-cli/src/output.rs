@@ -77,9 +77,7 @@ fn print_table(out: &mut impl Write, batch: &RecordBatch) -> Result<()> {
 }
 
 fn print_csv(out: &mut impl Write, batch: &RecordBatch) -> Result<()> {
-    let mut writer = arrow_csv::WriterBuilder::new()
-        .with_header(true)
-        .build(out);
+    let mut writer = arrow_csv::WriterBuilder::new().with_header(true).build(out);
     writer.write(batch)?;
     Ok(())
 }

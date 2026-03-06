@@ -346,7 +346,9 @@ impl RelationshipMapping {
     /// The actual table name to read data from.
     /// Returns `table_name` if set, otherwise falls back to `relationship_type`.
     pub fn resolved_table_name(&self) -> &str {
-        self.table_name.as_deref().unwrap_or(&self.relationship_type)
+        self.table_name
+            .as_deref()
+            .unwrap_or(&self.relationship_type)
     }
 
     /// Set an explicit table name that differs from the relationship type.

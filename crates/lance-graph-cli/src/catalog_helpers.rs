@@ -13,8 +13,7 @@ use crate::config::CatalogConfig;
 /// Build a SessionContext with tables from Unity Catalog registered.
 pub async fn build_catalog_context(catalog_cfg: &CatalogConfig) -> Result<SessionContext> {
     let uc_config = UnityCatalogConfig::new(&catalog_cfg.url);
-    let provider =
-        UnityCatalogProvider::new(uc_config).context("connecting to Unity Catalog")?;
+    let provider = UnityCatalogProvider::new(uc_config).context("connecting to Unity Catalog")?;
     let readers = default_table_readers();
     let connector = Connector::new(Arc::new(provider), readers)
         .with_storage_options(catalog_cfg.storage_options.clone());

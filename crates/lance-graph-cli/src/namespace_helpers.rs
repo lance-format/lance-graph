@@ -66,9 +66,7 @@ pub async fn build_namespace_context(
             Arc::new(LanceTableProvider::new(Arc::new(dataset), true, true));
 
         ctx.register_table(register_as, provider)
-            .with_context(|| {
-                format!("registering table '{physical_name}' as '{register_as}'")
-            })?;
+            .with_context(|| format!("registering table '{physical_name}' as '{register_as}'"))?;
     }
 
     Ok(ctx)
