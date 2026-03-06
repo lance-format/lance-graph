@@ -250,9 +250,7 @@ impl PyUnityCatalog {
         let connector = self.connector.clone();
         let cat = catalog_name.to_string();
         let result = RT
-            .block_on(Some(py), async move {
-                connector.list_schemas(&cat).await
-            })?
+            .block_on(Some(py), async move { connector.list_schemas(&cat).await })?
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(result
             .into_iter()
@@ -278,9 +276,10 @@ impl PyUnityCatalog {
         let cat = catalog_name.to_string();
         let sch = schema_name.to_string();
         let result = RT
-            .block_on(Some(py), async move {
-                connector.list_tables(&cat, &sch).await
-            })?
+            .block_on(
+                Some(py),
+                async move { connector.list_tables(&cat, &sch).await },
+            )?
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(result
             .into_iter()

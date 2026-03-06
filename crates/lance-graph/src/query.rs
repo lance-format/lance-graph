@@ -620,15 +620,19 @@ impl CypherQuery {
         let config = self.require_config()?;
 
         let mut required_tables: HashSet<String> = HashSet::new();
-        // Use original label/type names (not lowercase keys) for namespace resolution
-        // The namespace needs the original casing to find files on disk
-        required_tables.extend(config.node_mappings.values().map(|m| m.label.clone()));
-        required_tables.extend(
-            config
-                .relationship_mappings
-                .values()
-                .map(|m| m.relationship_type.clone()),
-        );
+        // Map from resolved table name -> label (for registering under the right name)
+        let mut table_to_label: HashMap<String, String> = HashMap::new();
+        // Use resolved_table_name() which returns table_name if set, else falls back to label
+        for m in config.node_mappings.values() {
+            let table = m.resolved_table_name().to_string();
+            required_tables.insert(table.clone());
+            table_to_label.insert(table, m.label.clone());
+        }
+        for m in config.relationship_mappings.values() {
+            let table = m.resolved_table_name().to_string();
+            required_tables.insert(table.clone());
+            table_to_label.insert(table, m.relationship_type.clone());
+        }
 
         if required_tables.is_empty() {
             return Err(GraphError::ConfigError {
@@ -678,9 +682,11 @@ impl CypherQuery {
             let provider: Arc<dyn TableProvider> =
                 Arc::new(LanceTableProvider::new(dataset.clone(), true, true));
 
-            // Register with lowercase table name for case-insensitive behavior
-            let normalized_table_name = table_name.to_lowercase();
-            ctx.register_table(&normalized_table_name, provider.clone())
+            // Register under the graph label (lowercased), not the physical table name.
+            // This allows the query planner to find the table using the Cypher label.
+            let label = table_to_label.get(&table_name).unwrap_or(&table_name);
+            let normalized_label = label.to_lowercase();
+            ctx.register_table(&normalized_label, provider.clone())
                 .map_err(|e| GraphError::PlanError {
                     message: format!(
                         "Failed to register table '{}' in SessionContext: {}",
@@ -689,8 +695,8 @@ impl CypherQuery {
                     location: snafu::Location::new(file!(), line!(), column!()),
                 })?;
 
-            // Store provider with normalized (lowercase) key for consistent lookup
-            providers.insert(normalized_table_name.clone(), provider);
+            // Store provider with normalized label key for consistent lookup
+            providers.insert(normalized_label, provider);
         }
 
         for label in config.node_mappings.keys() {
