@@ -352,3 +352,126 @@ crates/lance-graph/src/graph/spo/builder.rs         USE BitVec, add label_to_bit
 crates/lance-graph/src/graph/spo/merkle.rs          USE BitVec for merkle hashing
 crates/lance-graph/tests/spo_ground_truth.rs        USE BitVec in all tests
 ```
+
+---
+
+## ADDENDUM: COPY SIMD FROM RUSTYNUM (DO NOT HAND-ROLL)
+
+### Clone rustynum for reference:
+
+```bash
+git clone https://github.com/AdaWorldAPI/rustynum.git ../rustynum
+```
+
+### Copy these exact files into BlasGraph BitVec:
+
+**FROM `rustynum-core/src/simd.rs` (2302 lines) — copy ~200 lines:**
+
+```
+Lines 446-466:  hamming_distance() — the dispatch (AVX-512 → AVX2 → scalar)
+Lines 471-487:  select_hamming_fn() — function pointer resolved ONCE
+Lines 665-730:  hamming_vpopcntdq() — AVX-512 fast path
+Lines 595-664:  hamming_avx2() — AVX2 Harley-Seal popcount
+Lines 731-750:  hamming_scalar_popcnt() — scalar fallback
+Lines 751-830:  popcount() + popcount_vpopcntdq() + popcount_avx2()
+```
+
+These operate on `&[u8]` slices. BitVec's `words: [u64; 256]` IS a `&[u8]` slice
+via `unsafe { core::slice::from_raw_parts(words.as_ptr() as *const u8, 2048) }`.
+The SIMD functions don't know or care about the type. They see bytes.
+
+**FROM `rustynum-core/src/fingerprint.rs` (401 lines) — copy the struct pattern:**
+
+```rust
+// rustynum already has this. Copy the design:
+pub struct Fingerprint<const N: usize> {
+    pub words: [u64; N],
+}
+// Standard sizes: Fingerprint<256> = 16384 bits
+```
+
+Consider making BlasGraph's `BitVec` actually BE `Fingerprint<{HD_WORDS}>`.
+Or copy the const-generic pattern. Either way, width is compile-time configurable.
+
+### DO NOT hand-roll SIMD intrinsics. The rustynum implementations handle:
+- Scalar tail (when buffer length isn't a multiple of register width)
+- Horizontal sum (8 × i64 reduction after AVX-512 accumulation)
+- Safety comments for every `unsafe` block
+- Feature detection via `is_x86_feature_detected!` (runtime, not compile-time)
+- AVX2 Harley-Seal lookup table (correct nibble LUT, not a naive popcount)
+- Block processing in AVX2 to avoid u8 saturation
+
+Hand-rolling these WILL have bugs. The rustynum versions have been tested
+across 95 PRs and hundreds of CI runs. Copy them.
+
+### The function pointer pattern:
+
+```rust
+// From rustynum simd.rs — resolve ONCE, call millions of times:
+pub fn select_hamming_fn() -> fn(&[u8], &[u8]) -> u64 {
+    if is_x86_feature_detected!("avx512vpopcntdq") { return hamming_vpopcntdq_safe; }
+    if is_x86_feature_detected!("avx2") { return hamming_avx2_safe; }
+    hamming_scalar_popcnt
+}
+
+// In BitVec, store the resolved function pointer:
+use std::sync::OnceLock;
+static HAMMING_FN: OnceLock<fn(&[u8], &[u8]) -> u64> = OnceLock::new();
+
+impl BitVec {
+    pub fn hamming_distance(&self, other: &BitVec) -> u32 {
+        let f = HAMMING_FN.get_or_init(|| select_hamming_fn());
+        let a = unsafe { core::slice::from_raw_parts(self.words.as_ptr() as *const u8, HD_BYTES) };
+        let b = unsafe { core::slice::from_raw_parts(other.words.as_ptr() as *const u8, HD_BYTES) };
+        f(a, b) as u32
+    }
+}
+// CPUID check happens ONCE. Every subsequent call is a direct function pointer.
+// Zero dispatch overhead after first call.
+```
+
+### Mapping: rustynum → lance-graph
+
+```
+rustynum function              → lance-graph BitVec method
+────────────────────────────────────────────────────────
+hamming_distance(&[u8],&[u8])  → BitVec::hamming_distance(&self, &BitVec)
+popcount(&[u8])                → BitVec::popcount(&self)
+select_hamming_fn()            → OnceLock<fn> in BitVec module
+hamming_vpopcntdq              → private, called via fn pointer
+hamming_avx2                   → private, called via fn pointer
+hamming_scalar_popcnt          → private, called via fn pointer
+Fingerprint<const N>           → BitVec (or rename BitVec to Fingerprint<HD_WORDS>)
+```
+
+### What NOT to copy from rustynum:
+
+```
+× mkl_ffi.rs          — MKL is an external dependency, upstream won't accept
+× backends/xsmm.rs    — LIBXSMM is an external dependency
+× backends/gemm.rs    — BF16 GEMM not needed for binary Hamming
+× bf16_hamming.rs     — weighted BF16 Hamming not needed yet
+× simd_compat.rs      — portable SIMD compat layer, overkill for this
+× kernels.rs          — JIT scan kernels, ladybug-rs territory
+× soaking.rs          — i8 accumulator, ladybug-rs territory
+```
+
+### What TO copy (total ~300 lines of proven, tested SIMD):
+
+```
+✓ hamming_distance dispatch    ~20 lines
+✓ hamming_vpopcntdq            ~30 lines
+✓ hamming_avx2 (Harley-Seal)   ~50 lines
+✓ hamming_scalar_popcnt        ~20 lines
+✓ popcount dispatch             ~20 lines
+✓ popcount_vpopcntdq           ~25 lines
+✓ popcount_avx2                ~50 lines
+✓ popcount_scalar               ~10 lines
+✓ select_hamming_fn             ~15 lines
+✓ OnceLock dispatch wrapper     ~15 lines
+✓ Fingerprint<const N> struct   ~50 lines (or adapt BitVec)
+                          TOTAL ~305 lines
+```
+
+This is 300 lines of battle-tested code replacing 145 lines of FNV-1a toy.
+The RedisGraph person sees 16K SIMD. They don't see rustynum. They see speed.
