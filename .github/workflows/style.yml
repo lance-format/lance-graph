@@ -45,8 +45,10 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y protobuf-compiler
-      - name: Clippy
+      - name: Clippy lance-graph
         run: cargo clippy --manifest-path crates/lance-graph/Cargo.toml --all-targets -- -D warnings
+      - name: Clippy lance-graph-python
+        run: cargo clippy --manifest-path crates/lance-graph-python/Cargo.toml --all-targets -- -D warnings
 
   typos:
     name: Spell Check

@@ -44,8 +44,10 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y protobuf-compiler
-      - name: Build
+      - name: Build lance-graph
         run: cargo build --manifest-path crates/lance-graph/Cargo.toml
+      - name: Build lance-graph-python
+        run: cargo check --manifest-path crates/lance-graph-python/Cargo.toml
       - name: Build tests
         run: cargo test --manifest-path crates/lance-graph/Cargo.toml --no-run
       - name: Run tests
