@@ -125,6 +125,7 @@ impl TableReader for DeltaTableReader {
 ///
 /// Includes Parquet support, and Delta Lake support when the `delta` feature is enabled.
 pub fn default_table_readers() -> Vec<Arc<dyn TableReader>> {
+    #[allow(unused_mut)]
     let mut readers: Vec<Arc<dyn TableReader>> = vec![Arc::new(ParquetTableReader)];
     #[cfg(feature = "delta")]
     readers.push(Arc::new(DeltaTableReader));

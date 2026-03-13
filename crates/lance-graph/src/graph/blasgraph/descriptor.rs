@@ -127,6 +127,7 @@ impl Descriptor {
 }
 
 /// Pre-built descriptor constants.
+#[allow(non_snake_case)]
 pub mod GrBDesc {
     use super::*;
 

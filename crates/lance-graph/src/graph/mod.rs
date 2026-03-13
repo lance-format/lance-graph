@@ -7,6 +7,7 @@
 //! the Cypher query engine. While the Cypher layer operates on property graphs
 //! via DataFusion, this layer provides direct fingerprint-based graph operations.
 
+pub mod blasgraph;
 pub mod fingerprint;
 pub mod sparse;
 pub mod spo;

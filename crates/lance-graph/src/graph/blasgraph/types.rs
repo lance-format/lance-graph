@@ -43,14 +43,17 @@ impl Default for BitVec {
     }
 }
 
-/// Simple xorshift64 pseudo-random number generator.
-fn xorshift64(state: &mut u64) -> u64 {
-    let mut x = *state;
-    x ^= x << 13;
-    x ^= x >> 7;
-    x ^= x << 17;
-    *state = x;
-    x
+/// SplitMix64 pseudo-random number generator.
+///
+/// Unlike xorshift64, SplitMix64 is **non-linear**, which prevents the
+/// property `random(a ^ b) == random(a) ^ random(b)` that causes XOR
+/// chains to collapse to zero prematurely.
+fn splitmix64(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9e3779b97f4a7c15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+    z ^ (z >> 31)
 }
 
 impl BitVec {
@@ -73,10 +76,10 @@ impl BitVec {
     /// The same seed always produces the same vector, which is essential
     /// for reproducible symbol assignment in HDC.
     pub fn random(seed: u64) -> Self {
-        let mut state = if seed == 0 { 1 } else { seed };
+        let mut state = seed;
         let mut words = [0u64; VECTOR_WORDS];
         for w in words.iter_mut() {
-            *w = xorshift64(&mut state);
+            *w = splitmix64(&mut state);
         }
         Self { words }
     }
@@ -246,6 +249,7 @@ pub fn hamming_to_similarity(distance: u32) -> f32 {
 
 /// Scalar type that can inhabit a matrix or vector element position.
 #[derive(Clone, Debug, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum HdrScalar {
     /// A hyperdimensional binary vector.
     Vector(BitVec),
