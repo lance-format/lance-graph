@@ -58,10 +58,10 @@ impl BackgroundExecutor {
         T::Output: Send + 'static,
     {
         if let Some(py) = py {
-            py.allow_threads(|| self.spawn_impl(task))
+            py.detach(|| self.spawn_impl(task))
         } else {
-            // Python::with_gil is a no-op if the GIL is already held by the thread.
-            Python::with_gil(|py| py.allow_threads(|| self.spawn_impl(task)))
+            // Python::attach acquires the GIL (no-op if already held by the thread).
+            Python::attach(|py| py.detach(|| self.spawn_impl(task)))
         }
     }
 
@@ -86,7 +86,7 @@ impl BackgroundExecutor {
 
         loop {
             // Check for keyboard interrupts
-            match Python::with_gil(|py| py.check_signals()) {
+            match Python::attach(|py| py.check_signals()) {
                 Ok(_) => {}
                 Err(err) => {
                     handle.abort();
@@ -113,13 +113,13 @@ impl BackgroundExecutor {
         T::Output: Send + 'static,
     {
         if let Some(py) = py {
-            py.allow_threads(|| {
+            py.detach(|| {
                 self.runtime.spawn(task);
             })
         } else {
-            // Python::with_gil is a no-op if the GIL is already held by the thread.
-            Python::with_gil(|py| {
-                py.allow_threads(|| {
+            // Python::attach acquires the GIL (no-op if already held by the thread).
+            Python::attach(|py| {
+                py.detach(|| {
                     self.runtime.spawn(task);
                 })
             })
@@ -143,10 +143,10 @@ impl BackgroundExecutor {
     {
         let future = Self::result_or_interrupt(future);
         if let Some(py) = py {
-            py.allow_threads(move || self.runtime.block_on(future))
+            py.detach(move || self.runtime.block_on(future))
         } else {
-            // Python::with_gil is a no-op if the GIL is already held by the thread.
-            Python::with_gil(|py| py.allow_threads(|| self.runtime.block_on(future)))
+            // Python::attach acquires the GIL (no-op if already held by the thread).
+            Python::attach(|py| py.detach(|| self.runtime.block_on(future)))
         }
     }
 
@@ -158,7 +158,7 @@ impl BackgroundExecutor {
         let interrupt_future = async {
             loop {
                 // Check for keyboard interrupts
-                match Python::with_gil(|py| py.check_signals()) {
+                match Python::attach(|py| py.check_signals()) {
                     Ok(_) => {
                         // Wait for 100ms before checking signals again
                         tokio::time::sleep(SIGNAL_CHECK_INTERVAL).await;

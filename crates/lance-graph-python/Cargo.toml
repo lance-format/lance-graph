@@ -19,5 +19,5 @@ futures = "0.3"
 lance-graph = { path = "../lance-graph" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-pyo3 = { version = "0.25", features = ["extension-module", "abi3-py39", "py-clone"] }
+pyo3 = { version = "0.26", features = ["extension-module", "abi3-py39", "py-clone"] }
 tokio = { version = "1.37", features = ["rt-multi-thread", "macros"] }

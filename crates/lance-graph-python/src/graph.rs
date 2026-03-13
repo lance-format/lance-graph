@@ -261,7 +261,7 @@ impl VectorSearch {
     ///     If query vector is not set or column not found
     /// RuntimeError
     ///     If search execution fails
-    fn search(&self, py: Python, table: &Bound<'_, PyAny>) -> PyResult<PyObject> {
+    fn search(&self, py: Python, table: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
         let batch = python_any_to_record_batch(table)?;
         let batch = normalize_record_batch(batch)?;
 
@@ -552,7 +552,7 @@ impl CypherQuery {
         py: Python,
         datasets: &Bound<'_, PyDict>,
         strategy: Option<ExecutionStrategy>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         // Convert datasets to Arrow batches while holding the GIL
         let arrow_datasets = python_datasets_to_batches(datasets)?;
 
@@ -594,7 +594,7 @@ impl CypherQuery {
         py: Python,
         namespace: &Bound<'_, PyDirNamespace>,
         strategy: Option<ExecutionStrategy>,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         let rust_strategy = strategy.map(|s| s.into());
         let inner_query = self.inner.clone();
         let namespace_arc = namespace.borrow().inner.clone();
@@ -705,7 +705,7 @@ impl CypherQuery {
         py: Python,
         datasets: &Bound<'_, PyDict>,
         vector_search: &VectorSearch,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         if vector_search.use_lance_index {
             if let Some(result) =
                 try_execute_with_lance_index(py, &self.inner, datasets, vector_search)?
@@ -757,7 +757,7 @@ fn python_to_json(value: &Bound<'_, PyAny>) -> PyResult<JsonValue> {
     }
 }
 
-fn json_to_python(py: Python, value: &JsonValue) -> PyResult<PyObject> {
+fn json_to_python(py: Python, value: &JsonValue) -> PyResult<Py<PyAny>> {
     match value {
         JsonValue::Null => Ok(py.None()),
         JsonValue::Bool(b) => {
@@ -1067,7 +1067,7 @@ fn python_any_to_record_batch(value: &Bound<'_, PyAny>) -> PyResult<RecordBatch>
 fn record_batch_to_python_table(
     py: Python,
     batch: &arrow_array::RecordBatch,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     use arrow::pyarrow::ToPyArrow;
     use pyo3::types::PyList;
 
@@ -1234,7 +1234,7 @@ impl CypherEngine {
     /// --------
     /// >>> result = engine.execute("MATCH (p:Person) WHERE p.age > 30 RETURN p.name")
     /// >>> print(result.to_pandas())
-    fn execute(&self, py: Python, query: &str) -> PyResult<PyObject> {
+    fn execute(&self, py: Python, query: &str) -> PyResult<Py<PyAny>> {
         // Parse the query
         let cypher_query = RustCypherQuery::new(query)
             .map_err(graph_error_to_pyerr)?
@@ -1286,7 +1286,7 @@ impl CypherEngine {
         py: Python,
         query: &str,
         vector_search: &VectorSearch,
-    ) -> PyResult<PyObject> {
+    ) -> PyResult<Py<PyAny>> {
         // Parse query and execute with cached catalog/context
         let cypher_query = RustCypherQuery::new(query)
             .map_err(graph_error_to_pyerr)?
@@ -1379,7 +1379,7 @@ impl SqlQuery {
     /// ------
     /// RuntimeError
     ///     If query execution fails
-    fn execute(&self, py: Python, datasets: &Bound<'_, PyDict>) -> PyResult<PyObject> {
+    fn execute(&self, py: Python, datasets: &Bound<'_, PyDict>) -> PyResult<Py<PyAny>> {
         let arrow_datasets = python_datasets_to_batches(datasets)?;
         let inner = self.inner.clone();
 
@@ -1514,7 +1514,7 @@ impl SqlEngine {
     /// ------
     /// RuntimeError
     ///     If query execution fails
-    fn execute(&self, py: Python, sql: &str) -> PyResult<PyObject> {
+    fn execute(&self, py: Python, sql: &str) -> PyResult<Py<PyAny>> {
         let query = RustSqlQuery::new(sql);
         let context = self.context.as_ref().clone();
 
