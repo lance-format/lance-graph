@@ -175,26 +175,26 @@ pub struct Belichtungsmesser {
     sigma: u32,
     /// Precomputed band thresholds: [μ-3σ, μ-2σ, μ-σ, μ].
     bands: [u32; 4],
-    /// Cascade thresholds at half-sigma intervals, computed from calibrated σ.
+    /// Cascade thresholds at quarter-sigma intervals, computed from calibrated σ.
     ///
     /// ```text
-    /// cascade[0] = μ − 1.0σ    (stage 1 default — 1/16 Stichprobe)
-    /// cascade[1] = μ − 1.5σ
-    /// cascade[2] = μ − 2.0σ    (stage 2 default — 1/4 Stichprobe)
-    /// cascade[3] = μ − 2.5σ
-    /// cascade[4] = μ − 3.0σ
+    /// cascade[0] = μ − 1.00σ   (stage 1 default — 1/16 Stichprobe)
+    /// cascade[1] = μ − 1.50σ
+    /// cascade[2] = μ − 1.75σ
+    /// cascade[3] = μ − 2.00σ   (stage 2 default — 1/4 Stichprobe)
+    /// cascade[4] = μ − 2.25σ
+    /// cascade[5] = μ − 2.50σ
+    /// cascade[6] = μ − 2.75σ
+    /// cascade[7] = μ − 3.00σ
     /// ```
     ///
     /// Only meaningful after warmup (`calibrate`). With `for_width` these
     /// use theoretical σ — the cascade still works but shift detection
     /// will refine them from real data.
-    ///
-    /// The half-sigma granularity (1.75, 2.25, 2.75 also computable via
-    /// `cascade_at`) allows dynamic tightening as σ stabilises.
-    cascade: [u32; 5],
+    cascade: [u32; 8],
     /// Which cascade[] index stage 1 uses. Default: 0 (μ-1σ).
     stage1_level: usize,
-    /// Which cascade[] index stage 2 uses. Default: 2 (μ-2σ).
+    /// Which cascade[] index stage 2 uses. Default: 3 (μ-2σ).
     stage2_level: usize,
     // -- Welford's online statistics for shift detection --
     running_count: u64,
@@ -203,20 +203,23 @@ pub struct Belichtungsmesser {
 }
 
 impl Belichtungsmesser {
-    /// Compute cascade thresholds at half-sigma intervals.
+    /// Compute cascade thresholds at quarter-sigma intervals.
     ///
     /// ```text
-    /// [μ-1σ, μ-1.5σ, μ-2σ, μ-2.5σ, μ-3σ]
+    /// [μ-1σ, μ-1.5σ, μ-1.75σ, μ-2σ, μ-2.25σ, μ-2.5σ, μ-2.75σ, μ-3σ]
     /// ```
     ///
-    /// Integer arithmetic: 1.5σ = 3σ/2, 2.5σ = 5σ/2. No float.
-    fn compute_cascade(mu: u32, sigma: u32) -> [u32; 5] {
+    /// Integer arithmetic: kσ = k*σ/4 with k in quarter-sigma units.
+    fn compute_cascade(mu: u32, sigma: u32) -> [u32; 8] {
         [
-            mu.saturating_sub(sigma),           // 1.0σ
-            mu.saturating_sub(3 * sigma / 2),   // 1.5σ
-            mu.saturating_sub(2 * sigma),       // 2.0σ
-            mu.saturating_sub(5 * sigma / 2),   // 2.5σ
-            mu.saturating_sub(3 * sigma),       // 3.0σ
+            mu.saturating_sub(4 * sigma / 4),   // 1.00σ
+            mu.saturating_sub(6 * sigma / 4),   // 1.50σ
+            mu.saturating_sub(7 * sigma / 4),   // 1.75σ
+            mu.saturating_sub(8 * sigma / 4),   // 2.00σ
+            mu.saturating_sub(9 * sigma / 4),   // 2.25σ
+            mu.saturating_sub(10 * sigma / 4),  // 2.50σ
+            mu.saturating_sub(11 * sigma / 4),  // 2.75σ
+            mu.saturating_sub(12 * sigma / 4),  // 3.00σ
         ]
     }
 
@@ -240,7 +243,7 @@ impl Belichtungsmesser {
             bands,
             cascade: Self::compute_cascade(mu, sigma),
             stage1_level: 0, // μ-1σ
-            stage2_level: 2, // μ-2σ
+            stage2_level: 3, // μ-2σ
             running_count: 0,
             running_sum: 0,
             running_m2: 0,
@@ -281,7 +284,7 @@ impl Belichtungsmesser {
             bands,
             cascade: Self::compute_cascade(mu, sigma),
             stage1_level: 0, // μ-1σ
-            stage2_level: 2, // μ-2σ
+            stage2_level: 3, // μ-2σ
             running_count: n,
             running_sum: sum,
             running_m2: var_sum,
@@ -321,8 +324,10 @@ impl Belichtungsmesser {
         self.bands
     }
 
-    /// Cascade thresholds: [μ-1σ, μ-1.5σ, μ-2σ, μ-2.5σ, μ-3σ].
-    pub fn cascade_thresholds(&self) -> [u32; 5] {
+    /// Cascade thresholds at quarter-sigma intervals.
+    ///
+    /// `[μ-1σ, μ-1.5σ, μ-1.75σ, μ-2σ, μ-2.25σ, μ-2.5σ, μ-2.75σ, μ-3σ]`
+    pub fn cascade_thresholds(&self) -> [u32; 8] {
         self.cascade
     }
 
@@ -337,17 +342,18 @@ impl Belichtungsmesser {
         self.mu.saturating_sub(quarter_sigmas * self.sigma / 4)
     }
 
-    /// Set which cascade level stage 1 uses (0..5).
+    /// Set which cascade[] index stage 1 uses (0..8).
     ///
-    /// 0 = μ-1σ, 1 = μ-1.5σ, 2 = μ-2σ, 3 = μ-2.5σ, 4 = μ-3σ.
+    /// 0=μ-1σ, 1=μ-1.5σ, 2=μ-1.75σ, 3=μ-2σ, 4=μ-2.25σ,
+    /// 5=μ-2.5σ, 6=μ-2.75σ, 7=μ-3σ.
     pub fn set_stage1_level(&mut self, level: usize) {
-        assert!(level < 5, "stage1_level must be 0..4");
+        assert!(level < 8, "stage1_level must be 0..7");
         self.stage1_level = level;
     }
 
-    /// Set which cascade level stage 2 uses (0..5).
+    /// Set which cascade[] index stage 2 uses (0..8).
     pub fn set_stage2_level(&mut self, level: usize) {
-        assert!(level < 5, "stage2_level must be 0..4");
+        assert!(level < 8, "stage2_level must be 0..7");
         self.stage2_level = level;
     }
 
@@ -592,7 +598,7 @@ mod tests {
             bands: [8192 - 192, 8192 - 128, 8192 - 64, 8192],
             cascade: Belichtungsmesser::compute_cascade(8192, 64),
             stage1_level: 0,
-            stage2_level: 2,
+            stage2_level: 3,
             running_count: 1000,
             running_sum: 8_192_000,
             running_m2: 64 * 64 * 1000,
@@ -791,7 +797,7 @@ mod tests {
             bands: [8192 - 192, 8192 - 128, 8192 - 64, 8192],
             cascade: Belichtungsmesser::compute_cascade(8192, 64),
             stage1_level: 0,
-            stage2_level: 2,
+            stage2_level: 3,
             running_count: 1000,
             running_sum: 8_192_000,
             running_m2: 64 * 64 * 1000,
@@ -893,64 +899,133 @@ mod tests {
         }
     }
 
-    // -- Test 8: Cascade warmup and dynamic level adjustment --
+    // -- Test 8: Cascade table structure --
 
     #[test]
-    fn test_cascade_warmup_and_levels() {
-        // Pre-warmup: theoretical thresholds.
+    fn test_cascade_table_structure() {
+        // Theoretical cascade from for_width.
         let meter = Belichtungsmesser::for_width(16384);
-        assert_eq!(meter.mu, 8192);
-        assert_eq!(meter.sigma, 64);
-
-        // Cascade table: half-sigma intervals.
         let c = meter.cascade;
-        assert_eq!(c[0], 8192 - 64);       // μ - 1.0σ = 8128
-        assert_eq!(c[1], 8192 - 96);       // μ - 1.5σ = 8096
-        assert_eq!(c[2], 8192 - 128);      // μ - 2.0σ = 8064
-        assert_eq!(c[3], 8192 - 160);      // μ - 2.5σ = 8032
-        assert_eq!(c[4], 8192 - 192);      // μ - 3.0σ = 8000
 
-        // Cascade table must be strictly descending.
-        for i in 0..4 {
+        // 8 entries at quarter-sigma intervals.
+        assert_eq!(c[0], 8192 - 64);       // μ - 1.00σ = 8128
+        assert_eq!(c[1], 8192 - 96);       // μ - 1.50σ = 8096
+        assert_eq!(c[2], 8192 - 112);      // μ - 1.75σ = 8080
+        assert_eq!(c[3], 8192 - 128);      // μ - 2.00σ = 8064
+        assert_eq!(c[4], 8192 - 144);      // μ - 2.25σ = 8048
+        assert_eq!(c[5], 8192 - 160);      // μ - 2.50σ = 8032
+        assert_eq!(c[6], 8192 - 176);      // μ - 2.75σ = 8016
+        assert_eq!(c[7], 8192 - 192);      // μ - 3.00σ = 8000
+
+        // Strictly descending.
+        for i in 0..7 {
             assert!(c[i] > c[i + 1], "cascade[{}]={} must > cascade[{}]={}",
                 i, c[i], i + 1, c[i + 1]);
         }
 
-        // Quarter-sigma for fine-grained thresholds.
-        assert_eq!(meter.cascade_at(7), 8192 - 7 * 64 / 4); // 1.75σ = 8080
-        assert_eq!(meter.cascade_at(9), 8192 - 9 * 64 / 4); // 2.25σ = 8048
-        assert_eq!(meter.cascade_at(11), 8192 - 11 * 64 / 4); // 2.75σ = 8016
+        // cascade_at for arbitrary quarter-sigma.
+        assert_eq!(meter.cascade_at(7), 8192 - 7 * 64 / 4);  // 1.75σ
+        assert_eq!(meter.cascade_at(9), 8192 - 9 * 64 / 4);  // 2.25σ
+        assert_eq!(meter.cascade_at(11), 8192 - 11 * 64 / 4); // 2.75σ
 
-        // Post-warmup: calibrated from real data.
-        let dists = random_pairwise_distances(256, 50, 42);
-        let mut meter = Belichtungsmesser::calibrate(&dists);
+        println!("Cascade table (theoretical): {:?}", c);
+        println!("  1.00σ={}, 1.75σ={}, 2.25σ={}, 2.75σ={}, 3.00σ={}",
+            c[0], c[2], c[4], c[6], c[7]);
+    }
 
-        println!(
-            "Warmup: μ={}, σ={}, cascade={:?}",
-            meter.mu, meter.sigma, meter.cascade
-        );
+    // -- Test 9: Warmup with 2000 samples, then 10000 with shifting σ --
 
-        // Cascade thresholds now reflect observed σ, not theoretical.
-        assert_eq!(meter.cascade[0], meter.mu.saturating_sub(meter.sigma));
-        assert_eq!(meter.cascade[2], meter.mu.saturating_sub(2 * meter.sigma));
-        assert_eq!(meter.cascade[4], meter.mu.saturating_sub(3 * meter.sigma));
+    #[test]
+    fn test_warmup_2k_then_shift_10k() {
+        let nwords = 256; // 16384 bits
 
-        // Dynamic adjustment: tighten stage 1 from 1σ to 1.5σ.
-        meter.set_stage1_level(1);
-        assert_eq!(meter.stage1_level, 1);
-        assert_eq!(
-            meter.cascade[meter.stage1_level],
-            meter.mu.saturating_sub(3 * meter.sigma / 2)
-        );
+        // Phase 1: Warmup with 2000 pairwise distances.
+        // 64 random vectors → C(64,2) = 2016 pairs.
+        let dists_2k = random_pairwise_distances(nwords, 64, 42);
+        assert!(dists_2k.len() >= 2000, "Need ≥2000 samples, got {}", dists_2k.len());
 
-        // Tighten stage 2 from 2σ to 2.5σ.
-        meter.set_stage2_level(3);
-        assert_eq!(meter.stage2_level, 3);
+        let mut meter = Belichtungsmesser::calibrate(&dists_2k);
+        let warmup_mu = meter.mu;
+        let warmup_sigma = meter.sigma;
 
-        println!(
-            "After adjustment: stage1=cascade[{}]={}, stage2=cascade[{}]={}",
-            meter.stage1_level, meter.cascade[meter.stage1_level],
-            meter.stage2_level, meter.cascade[meter.stage2_level]
-        );
+        println!("=== Phase 1: Warmup (2016 samples) ===");
+        println!("  μ={}, σ={}", warmup_mu, warmup_sigma);
+        println!("  cascade: {:?}", meter.cascade);
+        println!("  bands: {:?}", meter.bands);
+
+        // σ should be stable after 2000 samples.
+        assert!(warmup_sigma > 50 && warmup_sigma < 80,
+            "After 2000 samples, σ should be near 64, got {}", warmup_sigma);
+
+        // Test all cascade levels with warmup thresholds.
+        let query = random_words(nwords, 0);
+        let n_test = 5_000u32;
+        let candidates: Vec<Vec<u64>> = (1..=n_test)
+            .map(|i| random_words(nwords, i as u64 + 10000))
+            .collect();
+
+        // Sweep cascade levels and measure rejection at each.
+        println!("\n  Cascade level sweep (stage 1, {} candidates):", n_test);
+        let level_names = [
+            "1.00σ", "1.50σ", "1.75σ", "2.00σ",
+            "2.25σ", "2.50σ", "2.75σ", "3.00σ",
+        ];
+        for level in 0..8 {
+            let threshold = meter.cascade[level];
+            let pass: u32 = candidates.iter()
+                .filter(|c| words_hamming_sampled(&query, c, 16) <= threshold)
+                .count() as u32;
+            let reject_pct = 100.0 * (1.0 - pass as f64 / n_test as f64);
+            println!("    cascade[{}] ({:>5}) = {:>5}: {:>5}/{} pass ({:.1}% rejected)",
+                level, level_names[level], threshold, pass, n_test, reject_pct);
+        }
+
+        // Phase 2: Feed 10000 observations from a SHIFTED distribution.
+        // Simulate corpus change: μ drops from ~8192 to ~7800 (denser vectors).
+        println!("\n=== Phase 2: Shift detection (10000 observations, μ→7800) ===");
+        let mut shifts = 0u32;
+        let mut rng_state = 999u64;
+        for i in 0..10_000u32 {
+            // Shifted distances centered at 7800 with σ≈80.
+            let noise = (splitmix64(&mut rng_state) % 161) as i64 - 80;
+            let shifted_dist = (7800i64 + noise).max(0) as u32;
+            if let Some(alert) = meter.observe(shifted_dist) {
+                println!("  Shift #{} at observation {}: μ {}→{}, σ {}→{}",
+                    shifts + 1, i,
+                    alert.old_mu, alert.new_mu,
+                    alert.old_sigma, alert.new_sigma);
+                meter.recalibrate(&alert);
+                shifts += 1;
+
+                // Cascade must update with new σ.
+                println!("  New cascade: {:?}", meter.cascade);
+            }
+        }
+
+        assert!(shifts > 0, "Must detect at least one shift in 10000 observations");
+
+        // After shift: μ should be near 7800, σ should reflect new distribution.
+        println!("\n  After shift: μ={}, σ={}", meter.mu, meter.sigma);
+        println!("  Cascade: {:?}", meter.cascade);
+        assert!(meter.mu < 8000, "μ should have shifted below 8000, got {}", meter.mu);
+
+        // Re-sweep cascade levels with updated thresholds.
+        println!("\n  Post-shift cascade level sweep:");
+        for level in 0..8 {
+            let threshold = meter.cascade[level];
+            let pass: u32 = candidates.iter()
+                .filter(|c| words_hamming_sampled(&query, c, 16) <= threshold)
+                .count() as u32;
+            let reject_pct = 100.0 * (1.0 - pass as f64 / n_test as f64);
+            println!("    cascade[{}] ({:>5}) = {:>5}: {:>5}/{} pass ({:.1}% rejected)",
+                level, level_names[level], threshold, pass, n_test, reject_pct);
+        }
+
+        // Dynamic level adjustment: tighten after shift stabilises.
+        meter.set_stage1_level(1); // 1.5σ
+        meter.set_stage2_level(4); // 2.25σ
+        println!("\n  Dynamic adjustment: stage1=cascade[{}] ({}), stage2=cascade[{}] ({})",
+            meter.stage1_level, level_names[meter.stage1_level],
+            meter.stage2_level, level_names[meter.stage2_level]);
     }
 }
