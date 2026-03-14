@@ -7,7 +7,7 @@
 //!
 //! 1. **SSSP equivalence** — Hamming-based SSSP agrees with float Bellman-Ford
 //!    on >95% of pairwise distance rankings.
-//! 2. **Belichtungsmesser rejection** — staged Hamming sampling rejects >95%
+//! 2. **LightMeter rejection** — staged Hamming sampling rejects >95%
 //!    of random noise at stage 1, saving >90% of total compute.
 //! 3. **Cosine vs Hamming ranking** — SimHash BF16 encoding preserves >=7/10
 //!    top-k results compared to float cosine similarity.
@@ -89,7 +89,7 @@ fn float_bellman_ford(adj: &GrBMatrix, source: usize, max_iters: usize) -> Vec<f
 }
 
 // ---------------------------------------------------------------------------
-// Hamming sampling (Belichtungsmesser cascade)
+// Hamming sampling (LightMeter cascade)
 // ---------------------------------------------------------------------------
 
 /// Sample every `divisor`-th u64 word and extrapolate Hamming distance.
@@ -285,11 +285,11 @@ fn float_vs_hamming_sssp_equivalence() {
 }
 
 // ===========================================================================
-// Test 2: Belichtungsmesser rejection rate
+// Test 2: LightMeter rejection rate
 // ===========================================================================
 
 #[test]
-fn belichtungsmesser_rejection_rate() {
+fn light_meter_rejection_rate() {
     // Prove HDR cascade eliminates >95% before full comparison.
 
     let total = 10_000u32;
@@ -328,7 +328,7 @@ fn belichtungsmesser_rejection_rate() {
     for i in 1..total {
         let candidate = &nodes[i as usize];
 
-        // Stage 1: 1/16 sample (Belichtungsmesser first exposure reading)
+        // Stage 1: 1/16 sample (LightMeter first exposure reading)
         let sample_dist = hamming_sample(&query, candidate, 16);
         if sample_dist > SIGMA_3_THRESHOLD_16 {
             continue;
@@ -353,7 +353,7 @@ fn belichtungsmesser_rejection_rate() {
     let scanned = total - 1; // exclude self
     let rejection_rate = 1.0 - (stage1_pass as f64 / scanned as f64);
 
-    println!("--- belichtungsmesser_rejection_rate ---");
+    println!("--- light_meter_rejection_rate ---");
     println!(
         "Stage 1: {}/{} pass ({:.1}% rejected)",
         stage1_pass,
