@@ -395,7 +395,7 @@ impl Belichtungsmesser {
             }
 
             // -- Stage 2: 1/4 sample --
-            // Cascade level selected by stage2_level (default: 2 = μ-2σ).
+            // Cascade level selected by stage2_level (default: 3 = μ-2σ).
             // Larger Stichprobe supports tighter confidence.
             if do_stage2 {
                 let projected = words_hamming_sampled(query, candidate, 4);
@@ -965,10 +965,24 @@ mod tests {
             .collect();
 
         // Sweep cascade levels and measure rejection at each.
-        println!("\n  Cascade level sweep (stage 1, {} candidates):", n_test);
+        //
+        // Expected rejection rates for one-sided normal distribution:
+        //   1.00σ → 84.13%    1.50σ → 93.32%    1.75σ → 95.99%
+        //   2.00σ → 97.72%    2.25σ → 98.78%    2.50σ → 99.38%
+        //   2.75σ → 99.70%    3.00σ → 99.87%
+        //
+        // Pre-warmup with 1/16 Stichprobe: actual rates will be LOWER
+        // because the projected estimate has 4× the σ of full comparison.
+        // This is expected — the cascade intentionally allows false positives
+        // at early stages, caught by later stages with larger Stichprobe.
+        println!("\n  Cascade level sweep (stage 1 = 1/16 sample, {} candidates):", n_test);
         let level_names = [
             "1.00σ", "1.50σ", "1.75σ", "2.00σ",
             "2.25σ", "2.50σ", "2.75σ", "3.00σ",
+        ];
+        // One-sided expected rejection: P(X > μ-kσ) for standard normal.
+        let expected_reject = [
+            84.13, 93.32, 95.99, 97.72, 98.78, 99.38, 99.70, 99.87,
         ];
         for level in 0..8 {
             let threshold = meter.cascade[level];
@@ -976,8 +990,8 @@ mod tests {
                 .filter(|c| words_hamming_sampled(&query, c, 16) <= threshold)
                 .count() as u32;
             let reject_pct = 100.0 * (1.0 - pass as f64 / n_test as f64);
-            println!("    cascade[{}] ({:>5}) = {:>5}: {:>5}/{} pass ({:.1}% rejected)",
-                level, level_names[level], threshold, pass, n_test, reject_pct);
+            println!("    cascade[{}] ({:>5}) = {:>5}: {:>5}/{} pass ({:>5.1}% rejected, expected {:.1}% at full width)",
+                level, level_names[level], threshold, pass, n_test, reject_pct, expected_reject[level]);
         }
 
         // Phase 2: Feed 10000 observations from a SHIFTED distribution.
@@ -1017,8 +1031,8 @@ mod tests {
                 .filter(|c| words_hamming_sampled(&query, c, 16) <= threshold)
                 .count() as u32;
             let reject_pct = 100.0 * (1.0 - pass as f64 / n_test as f64);
-            println!("    cascade[{}] ({:>5}) = {:>5}: {:>5}/{} pass ({:.1}% rejected)",
-                level, level_names[level], threshold, pass, n_test, reject_pct);
+            println!("    cascade[{}] ({:>5}) = {:>5}: {:>5}/{} pass ({:>5.1}% rejected, expected {:.1}% at full width)",
+                level, level_names[level], threshold, pass, n_test, reject_pct, expected_reject[level]);
         }
 
         // Dynamic level adjustment: tighten after shift stabilises.
