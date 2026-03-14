@@ -784,6 +784,7 @@ impl Cascade {
 // ===========================================================================
 
 #[cfg(test)]
+#[allow(clippy::needless_range_loop)] // cascade sweeps index into multiple parallel arrays
 mod tests {
     use super::*;
 
@@ -874,7 +875,7 @@ mod tests {
         assert!(meter.bands[2] < meter.bands[3]);
 
         // Reservoir should be seeded from calibration data.
-        assert!(meter.reservoir.len() > 0,
+        assert!(!meter.reservoir.is_empty(),
             "Reservoir should be seeded from calibration");
 
         println!(
@@ -1149,7 +1150,7 @@ mod tests {
         // Now test with bimodal distribution.
         let mut reservoir_bi = ReservoirSample::new(1000);
         for _ in 0..8000 {
-            let d = if splitmix64(&mut rng) % 2 == 0 {
+            let d = if splitmix64(&mut rng).is_multiple_of(2) {
                 gen_approx_normal(&mut rng, 7500, 30)
             } else {
                 gen_approx_normal(&mut rng, 8500, 30)
@@ -1439,7 +1440,7 @@ mod tests {
         // Mix two narrow distributions far apart.
         let mut switched_to_empirical = false;
         for _ in 0..10000 {
-            let d = if splitmix64(&mut rng) % 2 == 0 {
+            let d = if splitmix64(&mut rng).is_multiple_of(2) {
                 gen_approx_normal(&mut rng, 7200, 30)
             } else {
                 gen_approx_normal(&mut rng, 8800, 30)

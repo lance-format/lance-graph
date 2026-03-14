@@ -158,10 +158,9 @@ fn random_f32_vec(dim: usize, seed: u64) -> Vec<f32> {
 /// angular (cosine) distance: Hamming distance between two SimHash vectors
 /// approximates their angular distance.
 fn f32_to_bitvec_simhash(vec: &[f32]) -> BitVec {
-    let dim = vec.len();
     let mut words = [0u64; VECTOR_WORDS];
 
-    for w_idx in 0..VECTOR_WORDS {
+    for (w_idx, word_slot) in words.iter_mut().enumerate() {
         let mut word = 0u64;
         for bit in 0..64 {
             let proj_idx = (w_idx * 64 + bit) as u64;
@@ -171,17 +170,17 @@ fn f32_to_bitvec_simhash(vec: &[f32]) -> BitVec {
                 .wrapping_add(0xCAFEBABE);
 
             let mut dot = 0.0f64;
-            for d in 0..dim {
+            for component in vec.iter() {
                 // Random direction component in [-1, 1].
                 let r_bits = splitmix64(&mut state);
                 let r = (r_bits as f64 / u64::MAX as f64) * 2.0 - 1.0;
-                dot += vec[d] as f64 * r;
+                dot += *component as f64 * r;
             }
             if dot >= 0.0 {
                 word |= 1u64 << bit;
             }
         }
-        words[w_idx] = word;
+        *word_slot = word;
     }
 
     BitVec::from_words(&words)
@@ -289,6 +288,7 @@ fn float_vs_hamming_sssp_equivalence() {
 // ===========================================================================
 
 #[test]
+#[allow(clippy::needless_range_loop)] // near_idx used as both seed and index
 fn cascade_rejection_rate() {
     // Prove HDR cascade eliminates >95% before full comparison.
 
