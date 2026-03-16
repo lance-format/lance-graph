@@ -236,6 +236,12 @@ impl VectorSearch {
             DistanceMetric::L2 => lance_linalg::distance::DistanceType::L2,
             DistanceMetric::Cosine => lance_linalg::distance::DistanceType::Cosine,
             DistanceMetric::Dot => lance_linalg::distance::DistanceType::Dot,
+            DistanceMetric::Hamming => {
+                return Err(GraphError::ExecutionError {
+                    message: "Hamming distance is not supported for Lance ANN search; use the hamming_distance UDF for binary vectors".to_string(),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                });
+            }
         };
 
         // Create query array

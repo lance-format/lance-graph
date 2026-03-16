@@ -7,7 +7,7 @@
 
 use crate::ast::DistanceMetric;
 use crate::error::{GraphError, Result};
-use arrow::array::{Array, ArrayRef, FixedSizeListArray, Float32Array, ListArray};
+use arrow::array::{Array, ArrayRef, FixedSizeBinaryArray, FixedSizeListArray, Float32Array, ListArray};
 
 /// Extract vectors from Arrow ListArray or FixedSizeListArray
 ///
@@ -201,7 +201,112 @@ pub fn compute_vector_distances(
             DistanceMetric::L2 => l2_distance(v, query_vector),
             DistanceMetric::Cosine => cosine_distance(v, query_vector),
             DistanceMetric::Dot => dot_product_distance(v, query_vector),
+            DistanceMetric::Hamming => f32::MAX, // Use compute_hamming_distances for binary vectors
         })
+        .collect()
+}
+
+/// Compute Hamming distance between two binary vectors (as byte slices).
+///
+/// Each byte is treated as 8 bits; the total distance is the number of
+/// differing bits across the entire slice.
+pub fn hamming_distance(a: &[u8], b: &[u8]) -> u32 {
+    if a.len() != b.len() {
+        return u32::MAX;
+    }
+    // Process 8 bytes at a time via u64 popcount
+    let chunks = a.len() / 8;
+    let mut dist = 0u32;
+    for i in 0..chunks {
+        let offset = i * 8;
+        let wa = u64::from_le_bytes(a[offset..offset + 8].try_into().unwrap());
+        let wb = u64::from_le_bytes(b[offset..offset + 8].try_into().unwrap());
+        dist += (wa ^ wb).count_ones();
+    }
+    // Remainder bytes
+    for i in (chunks * 8)..a.len() {
+        dist += (a[i] ^ b[i]).count_ones();
+    }
+    dist
+}
+
+/// Hamming similarity: `1.0 - distance / total_bits`.
+pub fn hamming_similarity(a: &[u8], b: &[u8]) -> f32 {
+    if a.len() != b.len() {
+        return 0.0;
+    }
+    let total_bits = (a.len() * 8) as f32;
+    let dist = hamming_distance(a, b) as f32;
+    1.0 - dist / total_bits
+}
+
+/// Extract binary vectors from a `FixedSizeBinaryArray`.
+///
+/// Each element is a fixed-size byte array (e.g. 2048 bytes = 16384 bits).
+pub fn extract_binary_vectors(array: &ArrayRef) -> Result<Vec<Vec<u8>>> {
+    if let Some(bin_array) = array.as_any().downcast_ref::<FixedSizeBinaryArray>() {
+        let mut vectors = Vec::with_capacity(bin_array.len());
+        for i in 0..bin_array.len() {
+            if bin_array.is_null(i) {
+                return Err(GraphError::ExecutionError {
+                    message: "Null binary vector in FixedSizeBinaryArray".to_string(),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                });
+            }
+            vectors.push(bin_array.value(i).to_vec());
+        }
+        return Ok(vectors);
+    }
+
+    Err(GraphError::ExecutionError {
+        message: "Expected FixedSizeBinaryArray for binary vector column".to_string(),
+        location: snafu::Location::new(file!(), line!(), column!()),
+    })
+}
+
+/// Extract a single binary vector from a ScalarValue.
+pub fn extract_single_binary_from_scalar(
+    scalar: &datafusion::scalar::ScalarValue,
+) -> Result<Vec<u8>> {
+    match scalar {
+        datafusion::scalar::ScalarValue::FixedSizeBinary(_, Some(bytes)) => Ok(bytes.clone()),
+        _ => {
+            // Fall back to converting to array
+            let array = scalar.to_array().map_err(|e| GraphError::ExecutionError {
+                message: format!("Failed to convert scalar to array: {}", e),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            })?;
+            let bin_array = array
+                .as_any()
+                .downcast_ref::<FixedSizeBinaryArray>()
+                .ok_or_else(|| GraphError::ExecutionError {
+                    message: "Expected FixedSizeBinaryArray for binary vector scalar".to_string(),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                })?;
+            if bin_array.is_empty() {
+                return Err(GraphError::ExecutionError {
+                    message: "Empty binary vector array".to_string(),
+                    location: snafu::Location::new(file!(), line!(), column!()),
+                });
+            }
+            Ok(bin_array.value(0).to_vec())
+        }
+    }
+}
+
+/// Compute Hamming distances for an array of binary vectors against a single query.
+pub fn compute_hamming_distances(vectors: &[Vec<u8>], query: &[u8]) -> Vec<f32> {
+    vectors
+        .iter()
+        .map(|v| hamming_distance(v, query) as f32)
+        .collect()
+}
+
+/// Compute Hamming similarities for an array of binary vectors against a single query.
+pub fn compute_hamming_similarities(vectors: &[Vec<u8>], query: &[u8]) -> Vec<f32> {
+    vectors
+        .iter()
+        .map(|v| hamming_similarity(v, query))
         .collect()
 }
 
@@ -225,6 +330,7 @@ pub fn compute_vector_similarities(
             }
             DistanceMetric::Cosine => cosine_similarity(v, query_vector),
             DistanceMetric::Dot => dot_product_similarity(v, query_vector),
+            DistanceMetric::Hamming => 0.0, // Use compute_hamming_similarities for binary vectors
         })
         .collect()
 }

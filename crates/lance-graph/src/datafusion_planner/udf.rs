@@ -57,6 +57,7 @@ fn vector_distance_func(
                         DistanceMetric::L2 => vector_ops::l2_distance(l, r),
                         DistanceMetric::Cosine => vector_ops::cosine_distance(l, r),
                         DistanceMetric::Dot => vector_ops::dot_product_distance(l, r),
+                        DistanceMetric::Hamming => f32::MAX,
                     })
                     .collect()
             } else {
@@ -113,6 +114,7 @@ fn vector_distance_func(
                 DistanceMetric::L2 => vector_ops::l2_distance(&left_vec, &right_vec),
                 DistanceMetric::Cosine => vector_ops::cosine_distance(&left_vec, &right_vec),
                 DistanceMetric::Dot => vector_ops::dot_product_distance(&left_vec, &right_vec),
+                DistanceMetric::Hamming => f32::MAX,
             };
 
             // Return as scalar since both inputs were scalars
@@ -170,6 +172,7 @@ pub(crate) fn create_vector_distance_udf(metric: &DistanceMetric) -> Arc<ScalarU
         DistanceMetric::L2 => VECTOR_DISTANCE_L2_UDF.clone(),
         DistanceMetric::Cosine => VECTOR_DISTANCE_COSINE_UDF.clone(),
         DistanceMetric::Dot => VECTOR_DISTANCE_DOT_UDF.clone(),
+        DistanceMetric::Hamming => HAMMING_DISTANCE_UDF.clone(),
     }
 }
 
@@ -202,6 +205,7 @@ fn vector_similarity_func(
         }
         DistanceMetric::Cosine => vector_ops::cosine_similarity(l, r),
         DistanceMetric::Dot => vector_ops::dot_product_similarity(l, r),
+        DistanceMetric::Hamming => 0.0, // Use hamming_similarity UDF for binary vectors
     };
 
     match (&args[0], &args[1]) {
@@ -335,6 +339,7 @@ pub(crate) fn create_vector_similarity_udf(metric: &DistanceMetric) -> Arc<Scala
         DistanceMetric::L2 => VECTOR_SIMILARITY_L2_UDF.clone(),
         DistanceMetric::Cosine => VECTOR_SIMILARITY_COSINE_UDF.clone(),
         DistanceMetric::Dot => VECTOR_SIMILARITY_DOT_UDF.clone(),
+        DistanceMetric::Hamming => HAMMING_SIMILARITY_UDF.clone(),
     }
 }
 
@@ -447,6 +452,247 @@ impl PartialEq for VectorSimilarityUDF {
 impl Eq for VectorSimilarityUDF {}
 
 impl std::hash::Hash for VectorSimilarityUDF {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hamming distance / similarity UDFs for binary vectors (FixedSizeBinary)
+// ---------------------------------------------------------------------------
+
+/// Hamming distance UDF operating on `FixedSizeBinary(2048)` columns.
+///
+/// Returns the number of differing bits (as `Float32`) between two binary
+/// vectors. This is the primary distance metric for 16384-bit fingerprints.
+fn hamming_distance_func(
+    args: &[ColumnarValue],
+) -> datafusion::error::Result<ColumnarValue> {
+    if args.len() != 2 {
+        return Err(datafusion::error::DataFusionError::Execution(
+            "hamming_distance requires exactly 2 arguments".to_string(),
+        ));
+    }
+
+    match (&args[0], &args[1]) {
+        (ColumnarValue::Array(left_arr), ColumnarValue::Array(right_arr)) => {
+            let left = vector_ops::extract_binary_vectors(left_arr)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let right = vector_ops::extract_binary_vectors(right_arr)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+
+            let distances: Vec<f32> = if right.len() == 1 {
+                vector_ops::compute_hamming_distances(&left, &right[0])
+            } else if left.len() == 1 {
+                vector_ops::compute_hamming_distances(&right, &left[0])
+            } else if left.len() == right.len() {
+                left.iter()
+                    .zip(right.iter())
+                    .map(|(l, r)| vector_ops::hamming_distance(l, r) as f32)
+                    .collect()
+            } else {
+                return Err(datafusion::error::DataFusionError::Execution(format!(
+                    "Binary vector count mismatch: left={}, right={}",
+                    left.len(),
+                    right.len()
+                )));
+            };
+
+            let result = Arc::new(arrow::array::Float32Array::from(distances)) as ArrayRef;
+            Ok(ColumnarValue::Array(result))
+        }
+
+        (ColumnarValue::Array(left_arr), ColumnarValue::Scalar(right_scalar)) => {
+            let left = vector_ops::extract_binary_vectors(left_arr)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let query = vector_ops::extract_single_binary_from_scalar(right_scalar)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let distances = vector_ops::compute_hamming_distances(&left, &query);
+            let result = Arc::new(arrow::array::Float32Array::from(distances)) as ArrayRef;
+            Ok(ColumnarValue::Array(result))
+        }
+
+        (ColumnarValue::Scalar(left_scalar), ColumnarValue::Array(right_arr)) => {
+            let right = vector_ops::extract_binary_vectors(right_arr)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let query = vector_ops::extract_single_binary_from_scalar(left_scalar)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let distances = vector_ops::compute_hamming_distances(&right, &query);
+            let result = Arc::new(arrow::array::Float32Array::from(distances)) as ArrayRef;
+            Ok(ColumnarValue::Array(result))
+        }
+
+        (ColumnarValue::Scalar(left_scalar), ColumnarValue::Scalar(right_scalar)) => {
+            let left = vector_ops::extract_single_binary_from_scalar(left_scalar)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let right = vector_ops::extract_single_binary_from_scalar(right_scalar)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let dist = vector_ops::hamming_distance(&left, &right) as f32;
+            Ok(ColumnarValue::Scalar(
+                datafusion::scalar::ScalarValue::Float32(Some(dist)),
+            ))
+        }
+    }
+}
+
+/// Hamming similarity UDF: returns `1.0 - hamming_distance / total_bits`.
+fn hamming_similarity_func(
+    args: &[ColumnarValue],
+) -> datafusion::error::Result<ColumnarValue> {
+    if args.len() != 2 {
+        return Err(datafusion::error::DataFusionError::Execution(
+            "hamming_similarity requires exactly 2 arguments".to_string(),
+        ));
+    }
+
+    match (&args[0], &args[1]) {
+        (ColumnarValue::Array(left_arr), ColumnarValue::Array(right_arr)) => {
+            let left = vector_ops::extract_binary_vectors(left_arr)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let right = vector_ops::extract_binary_vectors(right_arr)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+
+            let sims: Vec<f32> = if right.len() == 1 {
+                vector_ops::compute_hamming_similarities(&left, &right[0])
+            } else if left.len() == 1 {
+                vector_ops::compute_hamming_similarities(&right, &left[0])
+            } else if left.len() == right.len() {
+                left.iter()
+                    .zip(right.iter())
+                    .map(|(l, r)| vector_ops::hamming_similarity(l, r))
+                    .collect()
+            } else {
+                return Err(datafusion::error::DataFusionError::Execution(format!(
+                    "Binary vector count mismatch: left={}, right={}",
+                    left.len(),
+                    right.len()
+                )));
+            };
+
+            let result = Arc::new(arrow::array::Float32Array::from(sims)) as ArrayRef;
+            Ok(ColumnarValue::Array(result))
+        }
+
+        (ColumnarValue::Array(left_arr), ColumnarValue::Scalar(right_scalar)) => {
+            let left = vector_ops::extract_binary_vectors(left_arr)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let query = vector_ops::extract_single_binary_from_scalar(right_scalar)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let sims = vector_ops::compute_hamming_similarities(&left, &query);
+            let result = Arc::new(arrow::array::Float32Array::from(sims)) as ArrayRef;
+            Ok(ColumnarValue::Array(result))
+        }
+
+        (ColumnarValue::Scalar(left_scalar), ColumnarValue::Array(right_arr)) => {
+            let right = vector_ops::extract_binary_vectors(right_arr)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let query = vector_ops::extract_single_binary_from_scalar(left_scalar)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let sims = vector_ops::compute_hamming_similarities(&right, &query);
+            let result = Arc::new(arrow::array::Float32Array::from(sims)) as ArrayRef;
+            Ok(ColumnarValue::Array(result))
+        }
+
+        (ColumnarValue::Scalar(left_scalar), ColumnarValue::Scalar(right_scalar)) => {
+            let left = vector_ops::extract_single_binary_from_scalar(left_scalar)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let right = vector_ops::extract_single_binary_from_scalar(right_scalar)
+                .map_err(|e| datafusion::error::DataFusionError::Execution(e.to_string()))?;
+            let sim = vector_ops::hamming_similarity(&left, &right);
+            Ok(ColumnarValue::Scalar(
+                datafusion::scalar::ScalarValue::Float32(Some(sim)),
+            ))
+        }
+    }
+}
+
+/// Cached hamming distance UDF.
+static HAMMING_DISTANCE_UDF: LazyLock<Arc<ScalarUDF>> = LazyLock::new(|| {
+    let func = move |args: &[ColumnarValue]| -> datafusion::error::Result<ColumnarValue> {
+        hamming_distance_func(args)
+    };
+
+    Arc::new(ScalarUDF::new_from_impl(HammingDistanceUDF {
+        name: "hamming_distance".to_string(),
+        func: Arc::new(func),
+        signature: Signature::any(2, Volatility::Immutable),
+    }))
+});
+
+/// Cached hamming similarity UDF.
+static HAMMING_SIMILARITY_UDF: LazyLock<Arc<ScalarUDF>> = LazyLock::new(|| {
+    let func = move |args: &[ColumnarValue]| -> datafusion::error::Result<ColumnarValue> {
+        hamming_similarity_func(args)
+    };
+
+    Arc::new(ScalarUDF::new_from_impl(HammingDistanceUDF {
+        name: "hamming_similarity".to_string(),
+        func: Arc::new(func),
+        signature: Signature::any(2, Volatility::Immutable),
+    }))
+});
+
+/// Get the cached hamming distance UDF.
+#[allow(dead_code)]
+pub(crate) fn create_hamming_distance_udf() -> Arc<ScalarUDF> {
+    HAMMING_DISTANCE_UDF.clone()
+}
+
+/// Get the cached hamming similarity UDF.
+#[allow(dead_code)]
+pub(crate) fn create_hamming_similarity_udf() -> Arc<ScalarUDF> {
+    HAMMING_SIMILARITY_UDF.clone()
+}
+
+/// UDF implementation for hamming distance on binary vectors.
+struct HammingDistanceUDF {
+    name: String,
+    func: UdfFunc,
+    signature: Signature,
+}
+
+impl std::fmt::Debug for HammingDistanceUDF {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HammingDistanceUDF")
+            .field("name", &self.name)
+            .finish()
+    }
+}
+
+impl datafusion::logical_expr::ScalarUDFImpl for HammingDistanceUDF {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, _arg_types: &[DataType]) -> datafusion::error::Result<DataType> {
+        Ok(DataType::Float32)
+    }
+
+    fn invoke_with_args(
+        &self,
+        args: datafusion::logical_expr::ScalarFunctionArgs,
+    ) -> datafusion::error::Result<ColumnarValue> {
+        (self.func)(&args.args)
+    }
+}
+
+impl PartialEq for HammingDistanceUDF {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
+impl Eq for HammingDistanceUDF {}
+
+impl std::hash::Hash for HammingDistanceUDF {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.name.hash(state);
     }
@@ -733,6 +979,89 @@ mod tests {
             // Dot product distance = -dot_product
             assert_eq!(float_arr.value(0), -1.0); // -1.0 * 1.0 = -1.0
             assert!((float_arr.value(1) + 0.9).abs() < 0.01); // -(0.9 * 1.0) = -0.9
+        } else {
+            panic!("Expected array result");
+        }
+    }
+
+    /// Helper to create a FixedSizeBinaryArray from byte vectors
+    fn create_binary_array(vectors: Vec<Vec<u8>>) -> ArrayRef {
+        use arrow::array::FixedSizeBinaryArray;
+        let byte_len = vectors[0].len() as i32;
+        let arr = FixedSizeBinaryArray::try_from_iter(vectors.iter().map(|v| v.as_slice()))
+            .unwrap();
+        Arc::new(arr) as ArrayRef
+    }
+
+    #[test]
+    fn test_hamming_distance_identical() {
+        let v = vec![0xFFu8; 8]; // 64 bits all set
+        let left = create_binary_array(vec![v.clone()]);
+        let right = create_binary_array(vec![v]);
+
+        let args = vec![ColumnarValue::Array(left), ColumnarValue::Array(right)];
+        let result = hamming_distance_func(&args).unwrap();
+
+        if let ColumnarValue::Array(arr) = result {
+            let float_arr = arr.as_any().downcast_ref::<Float32Array>().unwrap();
+            assert_eq!(float_arr.value(0), 0.0);
+        } else {
+            panic!("Expected array result");
+        }
+    }
+
+    #[test]
+    fn test_hamming_distance_complement() {
+        let a = vec![0xFFu8; 8]; // all 1s
+        let b = vec![0x00u8; 8]; // all 0s
+        let left = create_binary_array(vec![a]);
+        let right = create_binary_array(vec![b]);
+
+        let args = vec![ColumnarValue::Array(left), ColumnarValue::Array(right)];
+        let result = hamming_distance_func(&args).unwrap();
+
+        if let ColumnarValue::Array(arr) = result {
+            let float_arr = arr.as_any().downcast_ref::<Float32Array>().unwrap();
+            assert_eq!(float_arr.value(0), 64.0); // 8 bytes * 8 bits = 64 differing bits
+        } else {
+            panic!("Expected array result");
+        }
+    }
+
+    #[test]
+    fn test_hamming_similarity_identical() {
+        let v = vec![0xAAu8; 16];
+        let left = create_binary_array(vec![v.clone()]);
+        let right = create_binary_array(vec![v]);
+
+        let args = vec![ColumnarValue::Array(left), ColumnarValue::Array(right)];
+        let result = hamming_similarity_func(&args).unwrap();
+
+        if let ColumnarValue::Array(arr) = result {
+            let float_arr = arr.as_any().downcast_ref::<Float32Array>().unwrap();
+            assert_eq!(float_arr.value(0), 1.0);
+        } else {
+            panic!("Expected array result");
+        }
+    }
+
+    #[test]
+    fn test_hamming_distance_broadcast() {
+        let a = vec![0xFFu8; 8];
+        let b = vec![0x00u8; 8];
+        let c = vec![0x0Fu8; 8]; // half bits differ from 0xFF
+        let left = create_binary_array(vec![a, b, c]);
+        let right = create_binary_array(vec![vec![0xFFu8; 8]]);
+
+        let args = vec![ColumnarValue::Array(left), ColumnarValue::Array(right)];
+        let result = hamming_distance_func(&args).unwrap();
+
+        if let ColumnarValue::Array(arr) = result {
+            let float_arr = arr.as_any().downcast_ref::<Float32Array>().unwrap();
+            assert_eq!(float_arr.len(), 3);
+            assert_eq!(float_arr.value(0), 0.0);  // identical
+            assert_eq!(float_arr.value(1), 64.0); // complement
+            assert_eq!(float_arr.value(2), 32.0); // 0x0F vs 0xFF = 4 bits per byte * 8 bytes
         } else {
             panic!("Expected array result");
         }

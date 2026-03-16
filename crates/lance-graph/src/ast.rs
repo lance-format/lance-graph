@@ -294,6 +294,8 @@ pub enum DistanceMetric {
     Cosine,
     /// Dot product
     Dot,
+    /// Hamming distance for binary vectors (16384-bit BitVec / Fingerprint)
+    Hamming,
 }
 
 /// Comparison operators

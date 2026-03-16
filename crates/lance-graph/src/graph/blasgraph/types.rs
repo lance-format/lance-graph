@@ -99,6 +99,41 @@ impl BitVec {
         &self.words
     }
 
+    /// Return a zero-copy byte-level view of the vector.
+    ///
+    /// The returned slice has length `VECTOR_WORDS * 8` (2048 bytes) and
+    /// uses the platform's native endianness.
+    pub fn as_bytes(&self) -> &[u8] {
+        // SAFETY: [u64; 256] is layout-compatible with [u8; 2048] for reads.
+        // u8 has alignment 1, so the cast is always valid.
+        unsafe {
+            std::slice::from_raw_parts(
+                self.words.as_ptr() as *const u8,
+                VECTOR_WORDS * 8,
+            )
+        }
+    }
+
+    /// Construct a `BitVec` from a byte slice.
+    ///
+    /// Panics if `bytes.len() != VECTOR_WORDS * 8` (2048).
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        const BYTE_LEN: usize = VECTOR_WORDS * 8;
+        assert_eq!(
+            bytes.len(),
+            BYTE_LEN,
+            "Expected {} bytes, got {}",
+            BYTE_LEN,
+            bytes.len()
+        );
+        let mut words = [0u64; VECTOR_WORDS];
+        for (i, word) in words.iter_mut().enumerate() {
+            let off = i * 8;
+            *word = u64::from_ne_bytes(bytes[off..off + 8].try_into().unwrap());
+        }
+        Self { words }
+    }
+
     /// Return a mutable reference to the raw words.
     pub fn words_mut(&mut self) -> &mut [u64; VECTOR_WORDS] {
         &mut self.words
@@ -539,6 +574,26 @@ mod tests {
         let v = BitVec::random(77);
         let v2 = BitVec::from_words(v.words());
         assert_eq!(v, v2);
+    }
+
+    #[test]
+    fn test_as_bytes_length() {
+        let v = BitVec::random(42);
+        assert_eq!(v.as_bytes().len(), VECTOR_WORDS * 8);
+    }
+
+    #[test]
+    fn test_from_bytes_roundtrip() {
+        let v = BitVec::random(42);
+        let bytes = v.as_bytes();
+        let v2 = BitVec::from_bytes(bytes);
+        assert_eq!(v, v2);
+    }
+
+    #[test]
+    #[should_panic(expected = "Expected 2048 bytes")]
+    fn test_from_bytes_wrong_length() {
+        BitVec::from_bytes(&[0u8; 100]);
     }
 
     #[test]

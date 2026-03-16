@@ -8,6 +8,7 @@
 //! operator (applied during inner products) with an additive monoid
 //! (used to accumulate partial results).
 
+use crate::graph::blasgraph::ndarray_bridge;
 use crate::graph::blasgraph::types::{
     hamming_to_similarity, BinaryOp, BitVec, HdrScalar, MonoidOp,
 };
@@ -133,7 +134,10 @@ impl Semiring for HdrSemiring {
                     // weight). For HammingMin this is "shortest path"; for
                     // SimilarityMax it is "highest similarity" (least
                     // difference).
-                    if va.popcount() <= vb.popcount() {
+                    // Uses SIMD-dispatched popcount via ndarray bridge.
+                    let fa = ndarray_bridge::NdarrayFingerprint::from(va);
+                    let fb = ndarray_bridge::NdarrayFingerprint::from(vb);
+                    if fa.popcount() <= fb.popcount() {
                         a.clone()
                     } else {
                         b.clone()

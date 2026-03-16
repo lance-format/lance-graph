@@ -514,6 +514,7 @@ fn value_expression(input: &str) -> IResult<&str, ValueExpression> {
 fn parse_distance_metric(input: &str) -> IResult<&str, DistanceMetric> {
     alt((
         map(tag_no_case("cosine"), |_| DistanceMetric::Cosine),
+        map(tag_no_case("hamming"), |_| DistanceMetric::Hamming),
         map(tag_no_case("l2"), |_| DistanceMetric::L2),
         map(tag_no_case("dot"), |_| DistanceMetric::Dot),
     ))(input)

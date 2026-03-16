@@ -19,9 +19,12 @@
 //! | BOOLEAN | AND | OR | Reachability |
 //! | XOR_FIELD | XOR | XOR | GF(2) algebra |
 
+pub mod cascade_ops;
+pub mod columnar;
 pub mod hdr;
 pub mod descriptor;
 pub mod matrix;
+pub mod ndarray_bridge;
 pub mod ops;
 pub mod semiring;
 pub mod sparse;
