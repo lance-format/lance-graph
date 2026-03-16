@@ -1,0 +1,56 @@
+name: Build
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - crates/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/build.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-C debuginfo=1"
+  RUST_BACKTRACE: "1"
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  linux-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup rust toolchain
+        run: |
+          rustup toolchain install ${{ matrix.toolchain }}
+          rustup default ${{ matrix.toolchain }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "lance-graph-deps"
+          workspaces: |
+            crates/lance-graph
+            crates/lance-graph-python
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y protobuf-compiler
+      - name: Build lance-graph
+        run: cargo build --manifest-path crates/lance-graph/Cargo.toml
+      - name: Build lance-graph-python
+        run: cargo check --manifest-path crates/lance-graph-python/Cargo.toml
+      - name: Build tests
+        run: cargo test --manifest-path crates/lance-graph/Cargo.toml --no-run
+      - name: Run tests
+        run: cargo test --manifest-path crates/lance-graph/Cargo.toml
+      - name: Check benchmarks
+        run: cargo check --manifest-path crates/lance-graph/Cargo.toml --benches

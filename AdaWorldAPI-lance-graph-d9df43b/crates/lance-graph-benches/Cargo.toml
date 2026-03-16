@@ -1,0 +1,20 @@
+[package]
+name = "lance-graph-benches"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Benchmarks for lance-graph (not published)"
+
+[dependencies]
+lance-graph = { path = "../lance-graph", version = "0.5.3" }
+lance = "1.0.0"
+arrow-array = "56.2"
+arrow-schema = "56.2"
+criterion = { version = "0.5", features = ["async", "async_tokio", "html_reports"] }
+futures = "0.3"
+tempfile = "3"
+tokio = { version = "1.37", features = ["macros", "rt-multi-thread"] }
+
+[[bench]]
+name = "graph_execution"
+harness = false

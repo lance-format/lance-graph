@@ -1,0 +1,1417 @@
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright The Lance Authors
+
+//! Logical planning for graph queries
+//!
+//! This module implements the logical planning phase of the query pipeline:
+//! Parse → Semantic Analysis → **Logical Plan** → Physical Plan
+//!
+//! Logical plans describe WHAT operations to perform, not HOW to perform them.
+
+use crate::error::{GraphError, Result};
+use crate::{ast::*, GraphConfig};
+use serde::{Deserialize, Serialize};
+use snafu::Location;
+use std::collections::HashMap;
+
+/// A logical plan operator - describes what operation to perform
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum LogicalOperator {
+    /// Scan all nodes with a specific label
+    ScanByLabel {
+        variable: String,
+        label: String,
+        properties: HashMap<String, PropertyValue>,
+    },
+
+    /// Unwind a list into a sequence of rows
+    Unwind {
+        /// The input operator
+        input: Option<Box<LogicalOperator>>,
+        /// The expression to unwind (must yield a list)
+        expression: ValueExpression,
+        /// The alias for the unwound element
+        alias: String,
+    },
+
+    /// Apply a filter predicate (WHERE clause)
+    Filter {
+        input: Box<LogicalOperator>,
+        predicate: BooleanExpression,
+    },
+
+    /// Traverse relationships (the core graph operation)
+    ///
+    /// Represents a single-hop relationship traversal: (source)-[rel]->(target)
+    Expand {
+        /// The input operator (typically a node scan or previous expand)
+        input: Box<LogicalOperator>,
+        /// Variable name for the source node (e.g., "a" in (a)-[]->(b))
+        source_variable: String,
+        /// Variable name for the target node (e.g., "b" in (a)-[]->(b))
+        target_variable: String,
+        /// Label of the target node (e.g., "Person", "Book")
+        /// This is essential for looking up the correct schema during planning
+        target_label: String,
+        /// Types of relationships to traverse (e.g., ["KNOWS", "FRIEND_OF"])
+        relationship_types: Vec<String>,
+        /// Direction of traversal (Outgoing, Incoming, or Undirected)
+        direction: RelationshipDirection,
+        /// Optional variable name for the relationship itself (e.g., "r" in -[r]->)
+        relationship_variable: Option<String>,
+        /// Property filters to apply on the relationship
+        properties: HashMap<String, PropertyValue>,
+        /// Property filters to apply on the target node
+        target_properties: HashMap<String, PropertyValue>,
+    },
+
+    /// Variable-length path expansion (*1..2 syntax)
+    ///
+    /// Represents multi-hop relationship traversals: (source)-[rel*min..max]->(target)
+    /// This is implemented by unrolling into multiple fixed-length paths and unioning them
+    VariableLengthExpand {
+        /// The input operator (typically a node scan)
+        input: Box<LogicalOperator>,
+        /// Variable name for the source node
+        source_variable: String,
+        /// Variable name for the target node (reachable in min..max hops)
+        target_variable: String,
+        /// Types of relationships to traverse in each hop
+        relationship_types: Vec<String>,
+        /// Direction of traversal for each hop
+        direction: RelationshipDirection,
+        /// Optional variable name for the relationship pattern
+        relationship_variable: Option<String>,
+        /// Minimum number of hops (defaults to 1 if None)
+        min_length: Option<u32>,
+        /// Maximum number of hops (defaults to system max if None)
+        max_length: Option<u32>,
+        /// Property filters to apply on target nodes
+        target_properties: HashMap<String, PropertyValue>,
+    },
+
+    /// Project specific columns (RETURN clause)
+    Project {
+        input: Box<LogicalOperator>,
+        projections: Vec<ProjectionItem>,
+    },
+
+    /// Join multiple disconnected patterns
+    Join {
+        left: Box<LogicalOperator>,
+        right: Box<LogicalOperator>,
+        join_type: JoinType,
+    },
+
+    /// Apply DISTINCT
+    Distinct { input: Box<LogicalOperator> },
+
+    /// Apply ORDER BY
+    Sort {
+        input: Box<LogicalOperator>,
+        sort_items: Vec<SortItem>,
+    },
+
+    /// Apply SKIP/OFFSET
+    Offset {
+        input: Box<LogicalOperator>,
+        offset: u64,
+    },
+
+    /// Apply LIMIT
+    Limit {
+        input: Box<LogicalOperator>,
+        count: u64,
+    },
+}
+
+/// Projection item for SELECT/RETURN clauses
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectionItem {
+    pub expression: ValueExpression,
+    pub alias: Option<String>,
+}
+
+/// Join types for combining multiple patterns
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum JoinType {
+    Inner,
+    Left,
+    Right,
+    Full,
+    Cross,
+}
+
+/// Sort specification for ORDER BY
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SortItem {
+    pub expression: ValueExpression,
+    pub direction: SortDirection,
+}
+
+/// Logical plan builder - converts AST to logical plan
+pub struct LogicalPlanner<'a> {
+    /// Track variables in scope
+    variables: HashMap<String, String>, // variable -> label
+    config: &'a GraphConfig,
+}
+
+impl<'a> LogicalPlanner<'a> {
+    pub fn new(config: &'a GraphConfig) -> Self {
+        Self {
+            variables: HashMap::new(),
+            config,
+        }
+    }
+
+    /// Convert a Cypher AST to a logical plan
+    pub fn plan(&mut self, query: &CypherQuery) -> Result<LogicalOperator> {
+        // Plan main MATCH clauses
+        let mut plan = self.plan_reading_clauses(None, &query.reading_clauses)?;
+
+        // Apply WHERE clause if present (before WITH)
+        if let Some(where_clause) = &query.where_clause {
+            plan = LogicalOperator::Filter {
+                input: Box::new(plan),
+                predicate: where_clause.expression.clone(),
+            };
+        }
+
+        // Apply WITH clause if present (intermediate projection/aggregation)
+        if let Some(with_clause) = &query.with_clause {
+            plan = self.plan_with_clause(with_clause, plan)?;
+        }
+
+        // Plan post-WITH MATCH clauses
+        if !query.post_with_reading_clauses.is_empty() {
+            plan = self.plan_reading_clauses(Some(plan), &query.post_with_reading_clauses)?;
+        }
+
+        // Apply post-WITH WHERE clause if present
+        if let Some(post_where) = &query.post_with_where_clause {
+            plan = LogicalOperator::Filter {
+                input: Box::new(plan),
+                predicate: post_where.expression.clone(),
+            };
+        }
+
+        // Apply RETURN clause
+        plan = self.plan_return_clause(&query.return_clause, plan)?;
+
+        // Apply ORDER BY if present
+        if let Some(order_by) = &query.order_by {
+            plan = LogicalOperator::Sort {
+                input: Box::new(plan),
+                sort_items: order_by
+                    .items
+                    .iter()
+                    .map(|item| SortItem {
+                        expression: item.expression.clone(),
+                        direction: item.direction.clone(),
+                    })
+                    .collect(),
+            };
+        }
+
+        // Apply SKIP/OFFSET if present
+        if let Some(skip) = query.skip {
+            plan = LogicalOperator::Offset {
+                input: Box::new(plan),
+                offset: skip,
+            };
+        }
+
+        // Apply LIMIT if present
+        if let Some(limit) = query.limit {
+            plan = LogicalOperator::Limit {
+                input: Box::new(plan),
+                count: limit,
+            };
+        }
+
+        Ok(plan)
+    }
+
+    fn plan_reading_clauses(
+        &mut self,
+        base_plan: Option<LogicalOperator>,
+        reading_clauses: &[ReadingClause],
+    ) -> Result<LogicalOperator> {
+        let mut plan = base_plan;
+
+        if reading_clauses.is_empty() && plan.is_none() {
+            return Err(GraphError::PlanError {
+                message: "Query must have at least one MATCH or UNWIND clause".to_string(),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            });
+        }
+
+        for clause in reading_clauses {
+            plan = Some(self.plan_reading_clause_with_base(plan, clause)?);
+        }
+
+        plan.ok_or_else(|| GraphError::PlanError {
+            message: "Failed to plan clauses".to_string(),
+            location: snafu::Location::new(file!(), line!(), column!()),
+        })
+    }
+
+    /// Plan a single READING clause, optionally starting from an existing base plan
+    fn plan_reading_clause_with_base(
+        &mut self,
+        base: Option<LogicalOperator>,
+        clause: &ReadingClause,
+    ) -> Result<LogicalOperator> {
+        match clause {
+            ReadingClause::Match(match_clause) => {
+                self.plan_match_clause_with_base(base, match_clause)
+            }
+            ReadingClause::Unwind(unwind_clause) => {
+                self.plan_unwind_clause_with_base(base, unwind_clause)
+            }
+        }
+    }
+
+    /// Plan an UNWIND clause
+    fn plan_unwind_clause_with_base(
+        &mut self,
+        base: Option<LogicalOperator>,
+        unwind_clause: &UnwindClause,
+    ) -> Result<LogicalOperator> {
+        // Register the alias variable
+        self.variables
+            .insert(unwind_clause.alias.clone(), "Unwound".to_string());
+
+        Ok(LogicalOperator::Unwind {
+            input: base.map(Box::new),
+            expression: unwind_clause.expression.clone(),
+            alias: unwind_clause.alias.clone(),
+        })
+    }
+
+    /// Plan a single MATCH clause, optionally starting from an existing base plan
+    fn plan_match_clause_with_base(
+        &mut self,
+        base: Option<LogicalOperator>,
+        match_clause: &MatchClause,
+    ) -> Result<LogicalOperator> {
+        if match_clause.patterns.is_empty() {
+            return Err(GraphError::PlanError {
+                message: "MATCH clause must have at least one pattern".to_string(),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            });
+        }
+
+        let mut plan = base;
+        for pattern in &match_clause.patterns {
+            match pattern {
+                GraphPattern::Node(node) => {
+                    let already_bound = node
+                        .variable
+                        .as_deref()
+                        .is_some_and(|v| self.variables.contains_key(v));
+
+                    match (already_bound, plan.as_ref()) {
+                        (true, _) => { /* no-op */ }
+                        (false, None) => plan = Some(self.plan_node_scan(node)?),
+                        (false, Some(_)) => {
+                            let right = self.plan_node_scan(node)?;
+                            plan = Some(LogicalOperator::Join {
+                                left: Box::new(plan.unwrap()),
+                                right: Box::new(right),
+                                join_type: JoinType::Cross, // TODO: infer better join type based on shared vars
+                            });
+                        }
+                    }
+                }
+                GraphPattern::Path(path) => plan = Some(self.plan_path(plan, path)?),
+            }
+        }
+
+        plan.ok_or_else(|| GraphError::PlanError {
+            message: "Failed to plan MATCH clause".to_string(),
+            location: snafu::Location::new(file!(), line!(), column!()),
+        })
+    }
+
+    /// Plan a node scan (ScanByLabel)
+    fn plan_node_scan(&mut self, node: &NodePattern) -> Result<LogicalOperator> {
+        let variable = node
+            .variable
+            .clone()
+            .unwrap_or_else(|| format!("_node_{}", self.variables.len()));
+
+        // Validate label consistency if variable already exists
+        self.validate_variable_label(&variable, &node.labels)?;
+
+        // Reuse existing label or derive from AST (default to "Node")
+        let label = self
+            .variables
+            .get(&variable)
+            .cloned()
+            .or_else(|| node.labels.first().cloned())
+            .unwrap_or_else(|| "Node".to_string());
+
+        // Register variable with its label
+        self.variables.insert(variable.clone(), label.clone());
+
+        Ok(LogicalOperator::ScanByLabel {
+            variable,
+            label,
+            properties: node.properties.clone(),
+        })
+    }
+
+    /// Validate that a node's explicit label (if any) matches the already-registered
+    /// label for this variable. Returns `Ok(())` if the variable is new or if labels
+    /// are consistent, and an error if they conflict.
+    fn validate_variable_label(&self, variable: &str, ast_labels: &[String]) -> Result<()> {
+        if let Some(existing_label) = self.variables.get(variable) {
+            if let Some(ast_label) = ast_labels.first() {
+                if ast_label != existing_label {
+                    return Err(GraphError::PlanError {
+                        message: format!(
+                            "Variable '{}' already has label '{}', cannot redefine as '{}'",
+                            variable, existing_label, ast_label
+                        ),
+                        location: snafu::Location::new(file!(), line!(), column!()),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Plan a full path pattern, respecting the starting variable if provided
+    fn plan_path(
+        &mut self,
+        base: Option<LogicalOperator>,
+        path: &PathPattern,
+    ) -> Result<LogicalOperator> {
+        // Establish a base plan
+        let mut plan = if let Some(p) = base {
+            p
+        } else {
+            self.plan_node_scan(&path.start_node)?
+        };
+
+        // Determine the current source variable for the first hop
+        let mut current_src = match &path.start_node.variable {
+            Some(var) => var.clone(),
+            None => self.extract_variable_from_plan(&plan)?,
+        };
+
+        // Validate start node label consistency if variable already exists
+        if let Some(start_var) = &path.start_node.variable {
+            self.validate_variable_label(start_var, &path.start_node.labels)?;
+        }
+
+        // For each segment, add an expand
+        for segment in &path.segments {
+            // Determine / register target variable
+            let target_variable = segment
+                .end_node
+                .variable
+                .clone()
+                .unwrap_or_else(|| format!("_node_{}", self.variables.len()));
+
+            // Validate label consistency for already-registered variables
+            self.validate_variable_label(&target_variable, &segment.end_node.labels)?;
+
+            // Reuse existing label or derive from AST (default to "Node")
+            let target_label = self
+                .variables
+                .get(&target_variable)
+                .cloned()
+                .or_else(|| segment.end_node.labels.first().cloned())
+                .unwrap_or_else(|| "Node".to_string());
+
+            self.variables
+                .insert(target_variable.clone(), target_label.clone());
+
+            // Optimize fixed-length var-length expansions (*1 or *1..1)
+            let next_plan = match segment.relationship.length.as_ref() {
+                Some(length_range)
+                    if length_range.min == Some(1) && length_range.max == Some(1) =>
+                {
+                    LogicalOperator::Expand {
+                        input: Box::new(plan),
+                        source_variable: current_src.clone(),
+                        target_variable: target_variable.clone(),
+                        target_label: target_label.clone(),
+                        relationship_types: segment.relationship.types.clone(),
+                        direction: segment.relationship.direction.clone(),
+                        relationship_variable: segment.relationship.variable.clone(),
+                        properties: segment.relationship.properties.clone(),
+                        target_properties: segment.end_node.properties.clone(),
+                    }
+                }
+                Some(length_range) => LogicalOperator::VariableLengthExpand {
+                    input: Box::new(plan),
+                    source_variable: current_src.clone(),
+                    target_variable: target_variable.clone(),
+                    relationship_types: segment.relationship.types.clone(),
+                    direction: segment.relationship.direction.clone(),
+                    relationship_variable: segment.relationship.variable.clone(),
+                    min_length: length_range.min,
+                    max_length: length_range.max,
+                    target_properties: segment.end_node.properties.clone(),
+                },
+                None => LogicalOperator::Expand {
+                    input: Box::new(plan),
+                    source_variable: current_src.clone(),
+                    target_variable: target_variable.clone(),
+                    target_label: target_label.clone(),
+                    relationship_types: segment.relationship.types.clone(),
+                    direction: segment.relationship.direction.clone(),
+                    relationship_variable: segment.relationship.variable.clone(),
+                    properties: segment.relationship.properties.clone(),
+                    target_properties: segment.end_node.properties.clone(),
+                },
+            };
+
+            plan = next_plan;
+            current_src = target_variable;
+        }
+
+        Ok(plan)
+    }
+
+    /// Extract the main variable from a logical plan (for chaining)
+    #[allow(clippy::only_used_in_recursion)]
+    fn extract_variable_from_plan(&self, plan: &LogicalOperator) -> Result<String> {
+        match plan {
+            LogicalOperator::ScanByLabel { variable, .. } => Ok(variable.clone()),
+            LogicalOperator::Unwind { alias, .. } => Ok(alias.clone()),
+            LogicalOperator::Expand {
+                target_variable, ..
+            } => Ok(target_variable.clone()),
+            LogicalOperator::VariableLengthExpand {
+                target_variable, ..
+            } => Ok(target_variable.clone()),
+            LogicalOperator::Filter { input, .. } => self.extract_variable_from_plan(input),
+            LogicalOperator::Project { input, .. } => self.extract_variable_from_plan(input),
+            LogicalOperator::Distinct { input } => self.extract_variable_from_plan(input),
+            LogicalOperator::Sort { input, .. } => self.extract_variable_from_plan(input),
+            LogicalOperator::Offset { input, .. } => self.extract_variable_from_plan(input),
+            LogicalOperator::Limit { input, .. } => self.extract_variable_from_plan(input),
+            LogicalOperator::Join { left, right, .. } => {
+                // Prefer the right branch's tail variable, else fall back to left
+                self.extract_variable_from_plan(right)
+                    .or_else(|_| self.extract_variable_from_plan(left))
+            }
+        }
+    }
+
+    /// Plan RETURN clause (Project)
+    fn plan_return_clause(
+        &self,
+        return_clause: &ReturnClause,
+        input: LogicalOperator,
+    ) -> Result<LogicalOperator> {
+        let mut projections: Vec<ProjectionItem> = Vec::new();
+
+        for item in &return_clause.items {
+            let alias = &item.alias;
+            match &item.expression {
+                ValueExpression::Variable(var) => {
+                    match self.variables.get(var) {
+                        // if it is a node variable, expand to all properties
+                        Some(label) if label != "Unwound" => {
+                            let mapping = self.config.get_node_mapping(label).ok_or_else(|| {
+                                GraphError::PlanError {
+                                    message: format!("Node label '{}' doesn't exist", label),
+                                    location: Location::new(file!(), line!(), column!()),
+                                }
+                            })?;
+
+                            projections.push(ProjectionItem {
+                                expression: ValueExpression::Property(PropertyRef {
+                                    variable: var.clone(),
+                                    property: mapping.id_field.clone(),
+                                }),
+                                alias: alias
+                                    .clone()
+                                    .map(|name| format!("{}.{}", name, mapping.id_field)),
+                            });
+
+                            for prop in &mapping.property_fields {
+                                projections.push(ProjectionItem {
+                                    expression: ValueExpression::Property(PropertyRef {
+                                        variable: var.clone(),
+                                        property: prop.clone(),
+                                    }),
+                                    alias: alias.clone().map(|name| format!("{}.{}", name, prop)),
+                                });
+                            }
+                        }
+                        _ => {
+                            projections.push(ProjectionItem {
+                                expression: item.expression.clone(),
+                                alias: alias.clone(),
+                            });
+                        }
+                    }
+                }
+                _ => {
+                    projections.push(ProjectionItem {
+                        expression: item.expression.clone(),
+                        alias: alias.clone(),
+                    });
+                }
+            }
+        }
+
+        let mut plan = LogicalOperator::Project {
+            input: Box::new(input),
+            projections,
+        };
+
+        // Add DISTINCT if needed
+        if return_clause.distinct {
+            plan = LogicalOperator::Distinct {
+                input: Box::new(plan),
+            };
+        }
+
+        Ok(plan)
+    }
+
+    /// Plan WITH clause - intermediate projection/aggregation with optional ORDER BY and LIMIT
+    fn plan_with_clause(
+        &self,
+        with_clause: &WithClause,
+        input: LogicalOperator,
+    ) -> Result<LogicalOperator> {
+        // WITH creates a projection (like RETURN)
+        let projections = with_clause
+            .items
+            .iter()
+            .map(|item| ProjectionItem {
+                expression: item.expression.clone(),
+                alias: item.alias.clone(),
+            })
+            .collect();
+
+        let mut plan = LogicalOperator::Project {
+            input: Box::new(input),
+            projections,
+        };
+
+        // Apply ORDER BY within WITH if present
+        if let Some(order_by) = &with_clause.order_by {
+            plan = LogicalOperator::Sort {
+                input: Box::new(plan),
+                sort_items: order_by
+                    .items
+                    .iter()
+                    .map(|item| SortItem {
+                        expression: item.expression.clone(),
+                        direction: item.direction.clone(),
+                    })
+                    .collect(),
+            };
+        }
+
+        // Apply LIMIT within WITH if present
+        if let Some(limit) = with_clause.limit {
+            plan = LogicalOperator::Limit {
+                input: Box::new(plan),
+                count: limit,
+            };
+        }
+
+        Ok(plan)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{parser::parse_cypher_query, NodeMapping};
+
+    #[test]
+    fn test_relationship_query_logical_plan_structure() {
+        let query_text = r#"MATCH (p:Person {name: "Alice"})-[:KNOWS]->(f:Person) WHERE f.age > 30 RETURN f.name"#;
+
+        // Parse the query
+        let ast = parse_cypher_query(query_text).unwrap();
+
+        // Plan to logical operators
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical_plan = planner.plan(&ast).unwrap();
+
+        // Verify the overall structure is a projection
+        match &logical_plan {
+            LogicalOperator::Project { input, projections } => {
+                // Verify projection is f.name
+                assert_eq!(projections.len(), 1);
+                match &projections[0].expression {
+                    ValueExpression::Property(prop_ref) => {
+                        assert_eq!(prop_ref.variable, "f");
+                        assert_eq!(prop_ref.property, "name");
+                    }
+                    _ => panic!("Expected property reference for f.name"),
+                }
+
+                // Verify input is a filter for f.age > 30
+                match input.as_ref() {
+                    LogicalOperator::Filter {
+                        predicate,
+                        input: filter_input,
+                    } => {
+                        // Verify the predicate is f.age > 30
+                        match predicate {
+                            BooleanExpression::Comparison {
+                                left,
+                                operator,
+                                right,
+                            } => {
+                                match left {
+                                    ValueExpression::Property(prop_ref) => {
+                                        assert_eq!(prop_ref.variable, "f");
+                                        assert_eq!(prop_ref.property, "age");
+                                    }
+                                    _ => panic!("Expected property reference for f.age"),
+                                }
+                                assert_eq!(*operator, ComparisonOperator::GreaterThan);
+                                match right {
+                                    ValueExpression::Literal(PropertyValue::Integer(val)) => {
+                                        assert_eq!(*val, 30);
+                                    }
+                                    _ => panic!("Expected integer literal 30"),
+                                }
+                            }
+                            _ => panic!("Expected comparison expression"),
+                        }
+
+                        // Verify the input to the filter is an expand operation
+                        match filter_input.as_ref() {
+                            LogicalOperator::Expand {
+                                input: expand_input,
+                                source_variable,
+                                target_variable,
+                                relationship_types,
+                                direction,
+                                ..
+                            } => {
+                                assert_eq!(source_variable, "p");
+                                assert_eq!(target_variable, "f");
+                                assert_eq!(relationship_types, &vec!["KNOWS".to_string()]);
+                                assert_eq!(*direction, RelationshipDirection::Outgoing);
+
+                                // Verify the input to expand is a scan with properties for p.name = 'Alice'
+                                match expand_input.as_ref() {
+                                    LogicalOperator::ScanByLabel {
+                                        variable,
+                                        label,
+                                        properties,
+                                    } => {
+                                        assert_eq!(variable, "p");
+                                        assert_eq!(label, "Person");
+
+                                        // Verify the properties contain name = "Alice"
+                                        assert_eq!(properties.len(), 1);
+                                        match properties.get("name") {
+                                            Some(PropertyValue::String(val)) => {
+                                                assert_eq!(val, "Alice");
+                                            }
+                                            _ => {
+                                                panic!("Expected name property with value 'Alice'")
+                                            }
+                                        }
+                                    }
+                                    _ => panic!("Expected ScanByLabel with properties for Person"),
+                                }
+                            }
+                            _ => panic!("Expected Expand operation"),
+                        }
+                    }
+                    _ => panic!("Expected Filter for f.age > 30"),
+                }
+            }
+            _ => panic!("Expected Project at the top level"),
+        }
+    }
+
+    #[test]
+    fn test_simple_node_query_logical_plan() {
+        let query_text = "MATCH (n:Person) RETURN n.name";
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical_plan = planner.plan(&ast).unwrap();
+
+        // Should be: Project { input: ScanByLabel }
+        match &logical_plan {
+            LogicalOperator::Project { input, projections } => {
+                assert_eq!(projections.len(), 1);
+                match input.as_ref() {
+                    LogicalOperator::ScanByLabel {
+                        variable, label, ..
+                    } => {
+                        assert_eq!(variable, "n");
+                        assert_eq!(label, "Person");
+                    }
+                    _ => panic!("Expected ScanByLabel"),
+                }
+            }
+            _ => panic!("Expected Project"),
+        }
+    }
+
+    #[test]
+    fn test_node_with_properties_logical_plan() {
+        let query_text = "MATCH (n:Person {age: 25}) RETURN n.name";
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical_plan = planner.plan(&ast).unwrap();
+
+        // Should be: Project { input: ScanByLabel with properties }
+        // Properties from MATCH clause are pushed down to the scan level
+        match &logical_plan {
+            LogicalOperator::Project { input, .. } => {
+                match input.as_ref() {
+                    LogicalOperator::ScanByLabel {
+                        variable,
+                        label,
+                        properties,
+                    } => {
+                        assert_eq!(variable, "n");
+                        assert_eq!(label, "Person");
+
+                        // Verify the properties are in the scan
+                        assert_eq!(properties.len(), 1);
+                        match properties.get("age") {
+                            Some(PropertyValue::Integer(25)) => {}
+                            _ => panic!("Expected age property with value 25"),
+                        }
+                    }
+                    _ => panic!("Expected ScanByLabel with properties"),
+                }
+            }
+            _ => panic!("Expected Project"),
+        }
+    }
+
+    #[test]
+    fn test_variable_length_path_logical_plan() {
+        let query_text = "MATCH (a:Person)-[:KNOWS*1..2]->(b:Person) RETURN b.name";
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical_plan = planner.plan(&ast).unwrap();
+
+        // Should be: Project { input: VariableLengthExpand { input: ScanByLabel } }
+        match &logical_plan {
+            LogicalOperator::Project { input, .. } => match input.as_ref() {
+                LogicalOperator::VariableLengthExpand {
+                    input: expand_input,
+                    source_variable,
+                    target_variable,
+                    relationship_types,
+                    min_length,
+                    max_length,
+                    ..
+                } => {
+                    assert_eq!(source_variable, "a");
+                    assert_eq!(target_variable, "b");
+                    assert_eq!(relationship_types, &vec!["KNOWS".to_string()]);
+                    assert_eq!(*min_length, Some(1));
+                    assert_eq!(*max_length, Some(2));
+
+                    match expand_input.as_ref() {
+                        LogicalOperator::ScanByLabel {
+                            variable, label, ..
+                        } => {
+                            assert_eq!(variable, "a");
+                            assert_eq!(label, "Person");
+                        }
+                        _ => panic!("Expected ScanByLabel"),
+                    }
+                }
+                _ => panic!("Expected VariableLengthExpand"),
+            },
+            _ => panic!("Expected Project"),
+        }
+    }
+
+    #[test]
+    fn test_where_clause_logical_plan() {
+        // Note: Current parser only supports simple comparisons, not AND/OR
+        let query_text = r#"MATCH (n:Person) WHERE n.age > 25 RETURN n.name"#;
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical_plan = planner.plan(&ast).unwrap();
+
+        // Should be: Project { input: Filter { input: ScanByLabel } }
+        match &logical_plan {
+            LogicalOperator::Project { input, .. } => {
+                match input.as_ref() {
+                    LogicalOperator::Filter {
+                        predicate,
+                        input: scan_input,
+                    } => {
+                        // Verify it's a simple comparison: n.age > 25
+                        match predicate {
+                            BooleanExpression::Comparison {
+                                left,
+                                operator,
+                                right: _,
+                            } => {
+                                match left {
+                                    ValueExpression::Property(prop_ref) => {
+                                        assert_eq!(prop_ref.variable, "n");
+                                        assert_eq!(prop_ref.property, "age");
+                                    }
+                                    _ => panic!("Expected property reference for age"),
+                                }
+                                assert_eq!(*operator, ComparisonOperator::GreaterThan);
+                            }
+                            _ => panic!("Expected comparison expression"),
+                        }
+
+                        match scan_input.as_ref() {
+                            LogicalOperator::ScanByLabel { .. } => {}
+                            _ => panic!("Expected ScanByLabel"),
+                        }
+                    }
+                    _ => panic!("Expected Filter"),
+                }
+            }
+            _ => panic!("Expected Project"),
+        }
+    }
+
+    #[test]
+    fn test_multiple_node_patterns_join_in_match() {
+        let query_text = "MATCH (a:Person), (b:Company) RETURN a.name, b.name";
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical_plan = planner.plan(&ast).unwrap();
+
+        // Expect: Project { input: Join { left: Scan(a:Person), right: Scan(b:Company) } }
+        match &logical_plan {
+            LogicalOperator::Project { input, projections } => {
+                assert_eq!(projections.len(), 2);
+                match input.as_ref() {
+                    LogicalOperator::Join {
+                        left,
+                        right,
+                        join_type,
+                    } => {
+                        assert!(matches!(join_type, JoinType::Cross));
+                        match left.as_ref() {
+                            LogicalOperator::ScanByLabel {
+                                variable, label, ..
+                            } => {
+                                assert_eq!(variable, "a");
+                                assert_eq!(label, "Person");
+                            }
+                            _ => panic!("Expected left ScanByLabel for a:Person"),
+                        }
+                        match right.as_ref() {
+                            LogicalOperator::ScanByLabel {
+                                variable, label, ..
+                            } => {
+                                assert_eq!(variable, "b");
+                                assert_eq!(label, "Company");
+                            }
+                            _ => panic!("Expected right ScanByLabel for b:Company"),
+                        }
+                    }
+                    _ => panic!("Expected Join after Project"),
+                }
+            }
+            _ => panic!("Expected Project at top level"),
+        }
+    }
+
+    #[test]
+    fn test_shared_variable_chained_paths_in_match() {
+        let query_text =
+            "MATCH (a:Person)-[:KNOWS]->(b:Person), (b)-[:LIKES]->(c:Thing) RETURN c.name";
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical_plan = planner.plan(&ast).unwrap();
+
+        // Expect: Project { input: Expand (b->c) { input: Expand (a->b) { input: Scan(a) } } }
+        match &logical_plan {
+            LogicalOperator::Project { input, .. } => match input.as_ref() {
+                LogicalOperator::Expand {
+                    source_variable: src2,
+                    target_variable: tgt2,
+                    input: inner2,
+                    ..
+                } => {
+                    assert_eq!(src2, "b");
+                    assert_eq!(tgt2, "c");
+                    match inner2.as_ref() {
+                        LogicalOperator::Expand {
+                            source_variable: src1,
+                            target_variable: tgt1,
+                            input: inner1,
+                            ..
+                        } => {
+                            assert_eq!(src1, "a");
+                            assert_eq!(tgt1, "b");
+                            match inner1.as_ref() {
+                                LogicalOperator::ScanByLabel {
+                                    variable, label, ..
+                                } => {
+                                    assert_eq!(variable, "a");
+                                    assert_eq!(label, "Person");
+                                }
+                                _ => panic!("Expected ScanByLabel for a:Person"),
+                            }
+                        }
+                        _ => panic!("Expected first Expand a->b"),
+                    }
+                }
+                _ => panic!("Expected second Expand b->c at top of input"),
+            },
+            _ => panic!("Expected Project at top level"),
+        }
+    }
+
+    #[test]
+    fn test_fixed_length_variable_path_is_expand() {
+        let query_text = "MATCH (a:Person)-[:KNOWS*1..1]->(b:Person) RETURN b.name";
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical_plan = planner.plan(&ast).unwrap();
+
+        match &logical_plan {
+            LogicalOperator::Project { input, .. } => match input.as_ref() {
+                LogicalOperator::Expand {
+                    source_variable,
+                    target_variable,
+                    ..
+                } => {
+                    assert_eq!(source_variable, "a");
+                    assert_eq!(target_variable, "b");
+                }
+                _ => panic!("Expected Expand for fixed-length *1..1"),
+            },
+            _ => panic!("Expected Project at top level"),
+        }
+    }
+
+    #[test]
+    fn test_distinct_and_order_limit_wrapping() {
+        // DISTINCT should wrap Project with Distinct
+        let q1 = "MATCH (n:Person) RETURN DISTINCT n.name";
+        let ast1 = parse_cypher_query(q1).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical1 = planner.plan(&ast1).unwrap();
+        match logical1 {
+            LogicalOperator::Distinct { input } => match *input {
+                LogicalOperator::Project { .. } => {}
+                _ => panic!("Expected Project under Distinct"),
+            },
+            _ => panic!("Expected Distinct at top level"),
+        }
+
+        // ORDER BY + LIMIT should be Limit(Sort(Project(..)))
+        let q2 = "MATCH (n:Person) RETURN n.name ORDER BY n.name LIMIT 10";
+        let ast2 = parse_cypher_query(q2).unwrap();
+        let mut planner2 = LogicalPlanner::new(&config);
+        let logical2 = planner2.plan(&ast2).unwrap();
+        match logical2 {
+            LogicalOperator::Limit { input, count } => {
+                assert_eq!(count, 10);
+                match *input {
+                    LogicalOperator::Sort { input: inner, .. } => match *inner {
+                        LogicalOperator::Project { .. } => {}
+                        _ => panic!("Expected Project under Sort"),
+                    },
+                    _ => panic!("Expected Sort under Limit"),
+                }
+            }
+            _ => panic!("Expected Limit at top level"),
+        }
+    }
+
+    #[test]
+    fn test_order_skip_limit_wrapping() {
+        // ORDER BY + SKIP + LIMIT should be Limit(Offset(Sort(Project(..))))
+        let q = "MATCH (n:Person) RETURN n.name ORDER BY n.name SKIP 5 LIMIT 10";
+        let ast = parse_cypher_query(q).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical = planner.plan(&ast).unwrap();
+        match logical {
+            LogicalOperator::Limit { input, count } => {
+                assert_eq!(count, 10);
+                match *input {
+                    LogicalOperator::Offset {
+                        input: inner,
+                        offset,
+                    } => {
+                        assert_eq!(offset, 5);
+                        match *inner {
+                            LogicalOperator::Sort { input: inner2, .. } => match *inner2 {
+                                LogicalOperator::Project { .. } => {}
+                                _ => panic!("Expected Project under Sort"),
+                            },
+                            _ => panic!("Expected Sort under Offset"),
+                        }
+                    }
+                    _ => panic!("Expected Offset under Limit"),
+                }
+            }
+            _ => panic!("Expected Limit at top level"),
+        }
+    }
+
+    #[test]
+    fn test_skip_only_wrapping() {
+        // SKIP only should be Offset(Project(..))
+        let q = "MATCH (n:Person) RETURN n.name SKIP 3";
+        let ast = parse_cypher_query(q).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical = planner.plan(&ast).unwrap();
+        match logical {
+            LogicalOperator::Offset { input, offset } => {
+                assert_eq!(offset, 3);
+                match *input {
+                    LogicalOperator::Project { .. } => {}
+                    _ => panic!("Expected Project under Offset"),
+                }
+            }
+            _ => panic!("Expected Offset at top level"),
+        }
+    }
+
+    #[test]
+    fn test_relationship_properties_pushed_into_expand() {
+        let q = "MATCH (a)-[:KNOWS {since: 2020}]->(b) RETURN b.name";
+        let ast = parse_cypher_query(q).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical = planner.plan(&ast).unwrap();
+        match logical {
+            LogicalOperator::Project { input, .. } => match *input {
+                LogicalOperator::Expand { properties, .. } => match properties.get("since") {
+                    Some(PropertyValue::Integer(2020)) => {}
+                    _ => panic!("Expected relationship property since=2020 in Expand"),
+                },
+                _ => panic!("Expected Expand under Project"),
+            },
+            _ => panic!("Expected Project at top level"),
+        }
+    }
+
+    #[test]
+    fn test_multiple_match_clauses_cross_join() {
+        let q = "MATCH (a:Person) MATCH (b:Company) RETURN a.name, b.name";
+        let ast = parse_cypher_query(q).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical = planner.plan(&ast).unwrap();
+        match logical {
+            LogicalOperator::Project { input, .. } => match *input {
+                LogicalOperator::Join {
+                    left,
+                    right,
+                    join_type,
+                } => {
+                    assert!(matches!(join_type, JoinType::Cross));
+                    match (*left, *right) {
+                        (
+                            LogicalOperator::ScanByLabel {
+                                variable: va,
+                                label: la,
+                                ..
+                            },
+                            LogicalOperator::ScanByLabel {
+                                variable: vb,
+                                label: lb,
+                                ..
+                            },
+                        ) => {
+                            assert_eq!(va, "a");
+                            assert_eq!(la, "Person");
+                            assert_eq!(vb, "b");
+                            assert_eq!(lb, "Company");
+                        }
+                        _ => panic!("Expected two scans under Join"),
+                    }
+                }
+                _ => panic!("Expected Join under Project"),
+            },
+            _ => panic!("Expected Project at top level"),
+        }
+    }
+
+    #[test]
+    fn test_variable_only_node_default_label() {
+        let q = "MATCH (x) RETURN x.name";
+        let ast = parse_cypher_query(q).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical = planner.plan(&ast).unwrap();
+        match logical {
+            LogicalOperator::Project { input, .. } => match *input {
+                LogicalOperator::ScanByLabel {
+                    variable, label, ..
+                } => {
+                    assert_eq!(variable, "x");
+                    assert_eq!(label, "Node");
+                }
+                _ => panic!("Expected ScanByLabel under Project"),
+            },
+            _ => panic!("Expected Project at top level"),
+        }
+    }
+
+    #[test]
+    fn test_multi_label_node_uses_first_label() {
+        let q = "MATCH (n:Person:Employee) RETURN n.name";
+        let ast = parse_cypher_query(q).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical = planner.plan(&ast).unwrap();
+        match logical {
+            LogicalOperator::Project { input, .. } => match *input {
+                LogicalOperator::ScanByLabel { label, .. } => {
+                    assert_eq!(label, "Person");
+                }
+                _ => panic!("Expected ScanByLabel under Project"),
+            },
+            _ => panic!("Expected Project at top level"),
+        }
+    }
+
+    #[test]
+    fn test_open_ended_and_partial_var_length_ranges() {
+        // * (unbounded)
+        let q1 = "MATCH (a)-[:R*]->(b:Node) RETURN b.name";
+        let ast1 = parse_cypher_query(q1).unwrap();
+        let config = GraphConfig::default();
+        let mut planner1 = LogicalPlanner::new(&config);
+        let plan1 = planner1.plan(&ast1).unwrap();
+        match plan1 {
+            LogicalOperator::Project { input, .. } => match *input {
+                LogicalOperator::VariableLengthExpand {
+                    min_length,
+                    max_length,
+                    ..
+                } => {
+                    assert_eq!(min_length, None);
+                    assert_eq!(max_length, None);
+                }
+                _ => panic!("Expected VariableLengthExpand for *"),
+            },
+            _ => panic!("Expected Project at top level"),
+        }
+
+        // *2.. (min only)
+        let q2 = "MATCH (a)-[:R*2..]->(b) RETURN b.name";
+        let ast2 = parse_cypher_query(q2).unwrap();
+        let mut planner2 = LogicalPlanner::new(&config);
+        let plan2 = planner2.plan(&ast2).unwrap();
+        match plan2 {
+            LogicalOperator::Project { input, .. } => match *input {
+                LogicalOperator::VariableLengthExpand {
+                    min_length,
+                    max_length,
+                    ..
+                } => {
+                    assert_eq!(min_length, Some(2));
+                    assert_eq!(max_length, None);
+                }
+                _ => panic!("Expected VariableLengthExpand for *2.."),
+            },
+            _ => panic!("Expected Project at top level"),
+        }
+
+        // *..3 (max only)
+        let q3 = "MATCH (a)-[:R*..3]->(b) RETURN b.name";
+        let ast3 = parse_cypher_query(q3).unwrap();
+        let mut planner3 = LogicalPlanner::new(&config);
+        let plan3 = planner3.plan(&ast3).unwrap();
+        match plan3 {
+            LogicalOperator::Project { input, .. } => match *input {
+                LogicalOperator::VariableLengthExpand {
+                    min_length,
+                    max_length,
+                    ..
+                } => {
+                    assert_eq!(min_length, None);
+                    assert_eq!(max_length, Some(3));
+                }
+                _ => panic!("Expected VariableLengthExpand for *..3"),
+            },
+            _ => panic!("Expected Project at top level"),
+        }
+    }
+
+    #[test]
+    fn test_variable_reuse_across_patterns() {
+        let query_text =
+            "MATCH (a:Person)-[:KNOWS]->(shared:Person), (shared)-[:KNOWS]->(b:Person) RETURN b.name";
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical_plan = planner.plan(&ast).unwrap();
+
+        // Expect: Project { Expand(shared->b) { Expand(a->shared) { Scan(a) } } }
+        match &logical_plan {
+            LogicalOperator::Project { input, .. } => match input.as_ref() {
+                LogicalOperator::Expand {
+                    input: inner,
+                    source_variable,
+                    target_variable,
+                    ..
+                } => {
+                    assert_eq!(source_variable, "shared");
+                    assert_eq!(target_variable, "b");
+
+                    match inner.as_ref() {
+                        LogicalOperator::Expand {
+                            source_variable: first_src,
+                            target_variable: first_dst,
+                            ..
+                        } => {
+                            assert_eq!(first_src, "a");
+                            assert_eq!(first_dst, "shared");
+                        }
+                        _ => panic!("Expected first Expand (a->shared)"),
+                    }
+                }
+                _ => panic!("Expected second Expand (shared->b)"),
+            },
+            _ => panic!("Expected Project at top level"),
+        }
+    }
+
+    #[test]
+    fn test_variable_reuse_with_conflicting_labels() {
+        let query_text =
+            "MATCH (a:Person)-[:KNOWS]->(shared:Person), (shared:Company)-[:EMPLOYS]->(b:Person) RETURN b.name";
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let err = planner.plan(&ast).unwrap_err();
+        let err_msg = err.to_string();
+
+        assert!(
+            err_msg.contains("already has label 'Person'")
+                && err_msg.contains("cannot redefine as 'Company'"),
+            "Expected error about label conflict, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn test_return_node_variable() {
+        let query_text = "MATCH (a:Person) RETURN a";
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::builder()
+            .with_node_mapping(NodeMapping {
+                label: "Person".to_string(),
+                id_field: "id".to_string(),
+                property_fields: vec!["name".to_string(), "age".to_string()],
+                filter_conditions: None,
+            })
+            .build()
+            .unwrap();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical_plan = planner.plan(&ast).unwrap();
+
+        match &logical_plan {
+            LogicalOperator::Project { projections, .. } => {
+                assert_eq!(projections.len(), 3);
+                match &projections[0].expression {
+                    ValueExpression::Property(prop_ref) => {
+                        assert_eq!(prop_ref.variable, "a");
+                        assert_eq!(prop_ref.property, "id");
+                    }
+                    _ => panic!("Expected property reference for a.id"),
+                }
+                match &projections[1].expression {
+                    ValueExpression::Property(prop_ref) => {
+                        assert_eq!(prop_ref.variable, "a");
+                        assert_eq!(prop_ref.property, "name");
+                    }
+                    _ => panic!("Expected property reference for a.name"),
+                }
+                match &projections[2].expression {
+                    ValueExpression::Property(prop_ref) => {
+                        assert_eq!(prop_ref.variable, "a");
+                        assert_eq!(prop_ref.property, "age");
+                    }
+                    _ => panic!("Expected property reference for a.age"),
+                }
+            }
+            _ => panic!("Expected Project at the top level"),
+        }
+    }
+
+    #[test]
+    fn test_return_node_variable_with_alias() {
+        let query_text = "MATCH (a:Person) RETURN a AS b";
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::builder()
+            .with_node_label("Person", "id")
+            .build()
+            .unwrap();
+        let mut planner = LogicalPlanner::new(&config);
+        let logical_plan = planner.plan(&ast).unwrap();
+
+        match &logical_plan {
+            LogicalOperator::Project { projections, .. } => {
+                assert_eq!(projections.len(), 1);
+                match &projections[0].expression {
+                    ValueExpression::Property(prop_ref) => {
+                        assert_eq!(prop_ref.variable, "a");
+                        assert_eq!(prop_ref.property, "id");
+                    }
+                    _ => panic!("Expected property reference for a.id"),
+                }
+                match &projections[0].alias {
+                    Some(alias) => assert_eq!(alias, "b.id"),
+                    None => panic!("Expected alias for a.id as b.id"),
+                }
+            }
+            _ => panic!("Expected Project at the top level"),
+        }
+    }
+
+    #[test]
+    fn test_return_node_variable_no_label() {
+        let query_text = "MATCH (a:Person) RETURN a";
+
+        let ast = parse_cypher_query(query_text).unwrap();
+        let config = GraphConfig::default();
+        let mut planner = LogicalPlanner::new(&config);
+        let err = planner.plan(&ast).unwrap_err();
+        let err_msg = err.to_string();
+
+        assert!(
+            err_msg.contains("Node label 'Person' doesn't exist"),
+            "Expected error about missing label 'Person', got: {}",
+            err_msg
+        );
+    }
+}

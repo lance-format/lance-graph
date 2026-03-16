@@ -1,0 +1,57 @@
+# Build artifacts (Rust & cargo)
+/target/
+/debug/
+/release/
+**/target/
+**/debug/
+**/release/
+**/incremental/
+**/*.rs.bk
+*.pdb
+**/mutants.out*/
+
+# Build artifacts (Python)
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.egg
+*.egg-info/
+*.whl
+/build/
+/dist/
+python/python/lance_graph/*.so
+python/python/lance_graph/*.pyd
+python/target/
+python/.pytest_cache/
+python/.ruff_cache/
+python/.maturin/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+python/.venv/
+.python-version
+llm_config.yaml
+python/knowledge_graph_data/
+
+# IDE & tooling
+.vscode/
+.idea/
+.ijwb/
+.bsp/
+.bazelbsp/
+*.iml
+
+# Miscellaneous
+*.log
+*.tmp
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Generated data
+knowledge_graph_data/
