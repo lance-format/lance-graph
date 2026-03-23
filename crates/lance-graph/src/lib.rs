@@ -68,8 +68,7 @@ pub use lance_graph_catalog::{
 #[cfg(feature = "unity-catalog")]
 pub use lance_graph_catalog::{UnityCatalogConfig, UnityCatalogProvider};
 pub use lance_vector_search::VectorSearch;
-pub use query::{CypherQuery, ExecutionStrategy};
-pub use spark_dialect::{SqlDialect, SparkDialect};
+pub use query::{CypherQuery, ExecutionStrategy, SqlDialect};
 pub use sql_query::SqlQuery;
 #[cfg(feature = "delta")]
 pub use table_readers::DeltaTableReader;

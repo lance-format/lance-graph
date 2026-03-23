@@ -83,6 +83,7 @@ CypherEngine = _bindings.graph.CypherEngine
 SqlQuery = _bindings.graph.SqlQuery
 SqlEngine = _bindings.graph.SqlEngine
 ExecutionStrategy = _bindings.graph.ExecutionStrategy
+SqlDialect = _bindings.graph.SqlDialect
 VectorSearch = _bindings.graph.VectorSearch
 DistanceMetric = _bindings.graph.DistanceMetric
 
@@ -101,6 +102,7 @@ __all__ = [
     "SqlQuery",
     "SqlEngine",
     "ExecutionStrategy",
+    "SqlDialect",
     "VectorSearch",
     "DistanceMetric",
     "DirNamespace",

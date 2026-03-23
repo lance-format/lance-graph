@@ -16,6 +16,22 @@ use lance_namespace::models::DescribeTableRequest;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+/// SQL dialect to use when generating SQL from Cypher queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SqlDialect {
+    /// Generic SQL (DataFusion default dialect)
+    #[default]
+    Default,
+    /// Spark SQL dialect (backtick quoting, STRING type, EXTRACT, etc.)
+    Spark,
+    /// PostgreSQL dialect
+    PostgreSql,
+    /// MySQL dialect
+    MySql,
+    /// SQLite dialect
+    Sqlite,
+}
+
 /// Normalize an Arrow schema to have lowercase field names.
 ///
 /// This ensures that column names in the dataset match the normalized
@@ -302,7 +318,7 @@ impl CypherQuery {
     pub async fn to_sql(
         &self,
         datasets: HashMap<String, arrow::record_batch::RecordBatch>,
-        dialect: Option<crate::spark_dialect::SqlDialect>,
+        dialect: Option<SqlDialect>,
     ) -> Result<String> {
         use std::sync::Arc;
 
