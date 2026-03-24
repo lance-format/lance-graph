@@ -385,13 +385,12 @@ impl CypherQuery {
         // Unparse to SQL using the specified dialect
         let dialect_unparser = dialect.unparser();
         let unparser = dialect_unparser.as_unparser();
-        let sql_ast =
-            unparser
-                .plan_to_sql(&optimized_plan)
-                .map_err(|e| GraphError::PlanError {
-                    message: format!("Failed to unparse plan to SQL: {}", e),
-                    location: snafu::Location::new(file!(), line!(), column!()),
-                })?;
+        let sql_ast = unparser
+            .plan_to_sql(&optimized_plan)
+            .map_err(|e| GraphError::PlanError {
+                message: format!("Failed to unparse plan to SQL: {}", e),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            })?;
 
         Ok(sql_ast.to_string())
     }

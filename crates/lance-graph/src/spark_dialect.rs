@@ -15,10 +15,10 @@
 //! - `LENGTH()` instead of `CHARACTER_LENGTH()`
 //! - Subqueries in FROM require aliases
 
+use datafusion_sql::sqlparser::ast::{self, Ident, ObjectName, TimezoneInfo};
 use datafusion_sql::unparser::dialect::{
     CharacterLengthStyle, CustomDialect, CustomDialectBuilder, DateFieldExtractStyle,
 };
-use datafusion_sql::sqlparser::ast::{self, Ident, ObjectName, TimezoneInfo};
 
 /// Build a Spark SQL dialect using DataFusion's `CustomDialectBuilder`.
 pub fn build_spark_dialect() -> CustomDialect {
@@ -66,9 +66,18 @@ mod tests {
     #[test]
     fn test_spark_dialect_type_mappings() {
         let dialect = build_spark_dialect();
-        assert!(matches!(dialect.utf8_cast_dtype(), ast::DataType::Custom(..)));
-        assert!(matches!(dialect.int64_cast_dtype(), ast::DataType::BigInt(None)));
-        assert!(matches!(dialect.int32_cast_dtype(), ast::DataType::Int(None)));
+        assert!(matches!(
+            dialect.utf8_cast_dtype(),
+            ast::DataType::Custom(..)
+        ));
+        assert!(matches!(
+            dialect.int64_cast_dtype(),
+            ast::DataType::BigInt(None)
+        ));
+        assert!(matches!(
+            dialect.int32_cast_dtype(),
+            ast::DataType::Int(None)
+        ));
         assert!(matches!(dialect.date32_cast_dtype(), ast::DataType::Date));
     }
 
