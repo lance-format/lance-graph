@@ -9,8 +9,13 @@ use crate::config::GraphConfig;
 use crate::error::{GraphError, Result};
 use crate::logical_plan::LogicalPlanner;
 use crate::parser::parse_cypher_query;
+use crate::spark_dialect::build_spark_dialect;
 use arrow_array::RecordBatch;
 use arrow_schema::{Field, Schema, SchemaRef};
+use datafusion_sql::unparser::dialect::{
+    CustomDialect, DefaultDialect, MySqlDialect, PostgreSqlDialect, SqliteDialect,
+};
+use datafusion_sql::unparser::Unparser;
 use lance_graph_catalog::DirNamespace;
 use lance_namespace::models::DescribeTableRequest;
 use std::collections::{HashMap, HashSet};
@@ -30,6 +35,40 @@ pub enum SqlDialect {
     MySql,
     /// SQLite dialect
     Sqlite,
+}
+
+/// Wrapper to hold the concrete dialect type and provide an `Unparser` reference.
+pub enum DialectUnparser {
+    Default(DefaultDialect),
+    Spark(Box<CustomDialect>),
+    PostgreSql(PostgreSqlDialect),
+    MySql(MySqlDialect),
+    Sqlite(SqliteDialect),
+}
+
+impl DialectUnparser {
+    pub fn as_unparser(&self) -> Unparser<'_> {
+        match self {
+            DialectUnparser::Default(d) => Unparser::new(d),
+            DialectUnparser::Spark(d) => Unparser::new(d.as_ref()),
+            DialectUnparser::PostgreSql(d) => Unparser::new(d),
+            DialectUnparser::MySql(d) => Unparser::new(d),
+            DialectUnparser::Sqlite(d) => Unparser::new(d),
+        }
+    }
+}
+
+impl SqlDialect {
+    /// Create a `DialectUnparser` configured for this dialect.
+    pub fn unparser(&self) -> DialectUnparser {
+        match self {
+            SqlDialect::Default => DialectUnparser::Default(DefaultDialect {}),
+            SqlDialect::Spark => DialectUnparser::Spark(Box::new(build_spark_dialect())),
+            SqlDialect::PostgreSql => DialectUnparser::PostgreSql(PostgreSqlDialect {}),
+            SqlDialect::MySql => DialectUnparser::MySql(MySqlDialect {}),
+            SqlDialect::Sqlite => DialectUnparser::Sqlite(SqliteDialect {}),
+        }
+    }
 }
 
 /// Normalize an Arrow schema to have lowercase field names.

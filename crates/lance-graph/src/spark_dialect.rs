@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright The Lance Authors
 
-//! SQL dialect support for the DataFusion unparser.
+//! Spark SQL dialect for the DataFusion unparser.
 //!
 //! This module provides a Spark SQL dialect built using DataFusion's
-//! [`CustomDialectBuilder`], and a helper to build an [`Unparser`] for any
-//! supported [`SqlDialect`].
+//! [`CustomDialectBuilder`].
 //!
 //! Key Spark SQL differences from standard SQL:
 //! - Backtick (`` ` ``) identifier quoting
@@ -18,12 +17,8 @@
 
 use datafusion_sql::unparser::dialect::{
     CharacterLengthStyle, CustomDialect, CustomDialectBuilder, DateFieldExtractStyle,
-    DefaultDialect, MySqlDialect, PostgreSqlDialect, SqliteDialect,
 };
-use datafusion_sql::unparser::Unparser;
 use datafusion_sql::sqlparser::ast::{self, Ident, ObjectName, TimezoneInfo};
-
-use crate::query::SqlDialect;
 
 /// Build a Spark SQL dialect using DataFusion's `CustomDialectBuilder`.
 pub fn build_spark_dialect() -> CustomDialect {
@@ -54,40 +49,6 @@ pub fn build_spark_dialect() -> CustomDialect {
         .with_unnest_as_table_factor(false)
         .with_float64_ast_dtype(ast::DataType::Double(ast::ExactNumberInfo::None))
         .build()
-}
-
-/// Wrapper to hold the concrete dialect type and provide an `Unparser` reference.
-pub enum DialectUnparser {
-    Default(DefaultDialect),
-    Spark(CustomDialect),
-    PostgreSql(PostgreSqlDialect),
-    MySql(MySqlDialect),
-    Sqlite(SqliteDialect),
-}
-
-impl DialectUnparser {
-    pub fn as_unparser(&self) -> Unparser<'_> {
-        match self {
-            DialectUnparser::Default(d) => Unparser::new(d),
-            DialectUnparser::Spark(d) => Unparser::new(d),
-            DialectUnparser::PostgreSql(d) => Unparser::new(d),
-            DialectUnparser::MySql(d) => Unparser::new(d),
-            DialectUnparser::Sqlite(d) => Unparser::new(d),
-        }
-    }
-}
-
-impl SqlDialect {
-    /// Create a `DialectUnparser` configured for this dialect.
-    pub fn unparser(&self) -> DialectUnparser {
-        match self {
-            SqlDialect::Default => DialectUnparser::Default(DefaultDialect {}),
-            SqlDialect::Spark => DialectUnparser::Spark(build_spark_dialect()),
-            SqlDialect::PostgreSql => DialectUnparser::PostgreSql(PostgreSqlDialect {}),
-            SqlDialect::MySql => DialectUnparser::MySql(MySqlDialect {}),
-            SqlDialect::Sqlite => DialectUnparser::Sqlite(SqliteDialect {}),
-        }
-    }
 }
 
 #[cfg(test)]
