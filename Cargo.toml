@@ -2,6 +2,7 @@
 members = [
     "crates/lance-graph",
     "crates/lance-graph-catalog",
+    "crates/lance-graph-cli",
     "crates/lance-graph-python",
     "crates/lance-graph-benches",
 ]
