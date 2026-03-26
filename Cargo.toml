@@ -2,7 +2,8 @@
 members = [
     "crates/lance-graph",
     "crates/lance-graph-catalog",
-    "crates/lance-graph-python",
     "crates/lance-graph-benches",
 ]
+# Python package needs to be built by maturin.
+exclude = ["crates/lance-graph-python"]
 resolver = "2"
