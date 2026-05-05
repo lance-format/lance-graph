@@ -95,7 +95,6 @@ pub mod driver;
 pub mod auto_style;
 pub mod engine_bridge;
 pub mod sigma_rosetta;
-pub mod spo_bridge;
 
 // ──────────────────────────────────────────────────────────────────────
 // LAB-ONLY modules — compiled only into the shader-lab binary. Never
@@ -196,4 +195,3 @@ pub use engine_bridge::{
     ingest_codebook_indices, dispatch_from_top_k,
     write_qualia_17d, read_qualia_17d, persist_cycle,
 };
-pub use spo_bridge::{SpoTriple, SpoWitness, expand_to_fingerprint, project_into};
