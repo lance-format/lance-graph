@@ -246,34 +246,18 @@ impl PlannerAwareness {
     }
 
     /// Plan a query in Auto mode (no MUL, no thinking orchestration).
-    /// Two-pass: first CypherParse detects features, then strategies score affinity.
+    /// Two-pass: first lexical feature detection, then strategies score affinity.
     pub fn plan_auto(&self, query: &str) -> Result<PlanResult, PlanError> {
-        // Pass 1: detect features via CypherParse
-        let mut context = PlanContext {
+        // Pass 1: lexical feature detection (single source of truth lives in
+        // strategy::cypher_parse::extract_features — keep this in sync by
+        // calling it rather than re-implementing the keyword scan here).
+        let context = PlanContext {
             query: query.to_string(),
-            features: QueryFeatures::default(),
+            features: strategy::cypher_parse::extract_features(query),
             free_will_modifier: 1.0,
             thinking_style: None,
             nars_hint: None,
         };
-
-        // Run feature detection from query text (same logic as CypherParse)
-        let q = query.to_uppercase();
-        context.features.has_graph_pattern = q.contains("MATCH");
-        context.features.has_fingerprint_scan =
-            q.contains("HAMMING") || q.contains("FINGERPRINT") || q.contains("RESONATE");
-        context.features.has_variable_length_path =
-            q.contains("*..") || q.contains("*1..") || q.contains("*2..");
-        context.features.has_aggregation =
-            q.contains("COUNT") || q.contains("SUM") || q.contains("AVG");
-        context.features.has_mutation =
-            q.contains("CREATE") || q.contains("SET") || q.contains("DELETE");
-        context.features.has_resonance = q.contains("RESONATE");
-        context.features.has_truth_values = q.contains("TRUTH") || q.contains("CONFIDENCE");
-        context.features.has_workflow = q.contains("WORKFLOW") || q.contains("TASK");
-        context.features.num_match_clauses = q.matches("MATCH").count();
-        context.features.estimated_complexity =
-            (context.features.num_match_clauses as f64 * 0.2).min(1.0);
 
         // Pass 2: select strategies with detected features
         let selected = selector::select_strategies(
