@@ -30,6 +30,9 @@
 //! - [`jit`] — JIT compilation contract (jitson template → kernel)
 //! - [`orchestration`] — Bridge trait for single-binary routing
 //! - [`nars`] — NARS inference types shared across all consumers
+//! - [`collapse_gate`] — Per-row write airgap (`GateDecision`, `MergeMode`)
+//! - [`cycle_accumulator`] — Per-cadence flush gate; absorbs the L1↔L3
+//!   speed ratio. Distinct from `collapse_gate` per topology I-4.
 
 pub mod a2a_blackboard;
 pub mod auth;
@@ -38,6 +41,7 @@ pub mod cognitive_shader;
 pub mod collapse_gate;
 pub mod container;
 pub mod crystal;
+pub mod cycle_accumulator;
 pub mod distance;
 pub mod exploration;
 pub mod external_membrane;

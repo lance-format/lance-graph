@@ -84,6 +84,8 @@
 
 **Confidence (2026-04-24):** FINDING — 17 tests pass (13 without realtime, 17 with; 4 new tests in `version_watcher.rs`, 1 new `subscribe_receives_on_project` in `lance_membrane.rs`). Zero regressions.
 
+**Correction (2026-05-06):** The `tokio::sync::watch::Receiver` choice violates I-2 (tokio outbound only) per `SINGLE_BINARY_TOPOLOGY.md`. Sync substitute is `ArcSwap<u64>` + `event_listener::Event`, polled on a `std::thread`. WATCHER-1 entropy-ledger row carries the corrected spec.
+
 ---
 
 ## v1 — Unified Integration: PersonaHub × ONNX × Archetype × MM-CoT × RoleDB (authored 2026-04-23)
@@ -111,6 +113,8 @@
 **Status (2026-04-22):** Active. DM-0 and DM-1 shipped in this session. DM-2 through DM-9 queued.
 
 **Confidence (2026-04-22):** CONJECTURE on the full architecture (grounded in Arrow BBB analysis + repo evidence; no DM-2+ implementation shipped). DM-0/DM-1 are working stubs; Arrow compile-time BBB enforcement verified structurally, awaiting DM-2 compile-time leak test.
+
+**Correction (2026-05-06):** The framing "callcenter sits *outside* the canonical cognitive substrate" was read by some sessions as "separate process". Per `SINGLE_BINARY_TOPOLOGY.md`, callcenter is in-process Layer 2, sync, zero-copy over Layer 1 BindSpace. DM-5 / DM-8 are the only L3 (post-tokio) components in this plan.
 
 ---
 
@@ -181,6 +185,11 @@ Phases 2–4 queued.
 
 ## Cross-references
 
+- **`SINGLE_BINARY_TOPOLOGY.md`** — canonical architecture reference
+  (three layers, four invariants: single-binary, tokio-outbound-only,
+  BBB compile-time-enforced, per-row vs per-cadence gates distinct).
+  **READ FIRST** before proposing any new "membrane" / "transcode" /
+  "subscriber" / "external surface" plan.
 - **`STATUS_BOARD.md`** — deliverable-level status (D0 / D2 / D3 / …
   across all plans).
 - **`OPEN_PROMPTS.md`** — outstanding user questions / threads that
