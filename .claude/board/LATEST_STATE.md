@@ -149,3 +149,70 @@ proposing a new type.
 
 The fastest way to waste 30 turns is to re-invent what's already in
 the contract. This file exists to prevent that.
+
+---
+
+## 2026-05-05 — Recently Shipped backfill (PRs #244–#335)
+
+> The "Recently Shipped PRs" table above stops at #243 (last refreshed 2026-04-21). Roughly 50 PRs have merged since. This section retrofits them.
+
+| PR | Merged | Title | What it added (one-line) |
+|---|---|---|---|
+| **#335** | 2026-05-05 | Claude/thought cycle soa integration plan | Two new knowledge docs: gaussian-splat-cam-plane-workaround + entropy-budget-codebook-superposition |
+| **#330** | 2026-05-01 | docs: add Cursor Cloud specific instructions to AGENTS.md | AGENTS.md section: ndarray path, CI commands, fmt-drift inventory, bgz-tensor known failures |
+| **#329** | 2026-05-01 | style: apply rustfmt to contract lib.rs + python bindings | Tier-A rustfmt drift in contract lib.rs + python bindings (no semantic change) |
+| **#328** | 2026-05-01 | ci(test): add lance-graph-contract unit tests to test gate | `cargo test -p lance-graph-contract --lib` added to CI rust-test.yml |
+| **#327** | 2026-05-01 | style(shader-driver): drop double-space alignment in bindspace.rs | Two-line rustfmt drift fix in bindspace.rs introduced by #323 |
+| **#326** | 2026-05-01 | fix(sigma-propagation): correct log_norm_growth_negative test seed | Fix broken test from #322: seed at 4·I not I so attenuation reduces log-norm |
+| **#325** | 2026-04-30 | chore(toolchain): bump pin 1.94.0 → 1.94.1 | rust-toolchain.toml bumped to 1.94.1 to match sibling repos |
+| **#324** | 2026-04-30 | feat(shader-driver): Pillar-7 α-front-to-back-merge sink mode (B5) | AlphaFrontToBack MergeMode + EWA Kerbl-2023 compositing in stage [7] |
+| **#323** | 2026-04-30 | feat(cognitive-shader-driver): add Σ-codebook-index column to FingerprintColumns (B2) | FingerprintColumns.sigma u8 column (+1 byte/row, 0.02% overhead) |
+| **#322** | 2026-04-30 | feat(contract): promote EWA-Sandwich Σ-propagation kernel to contract (B1) | sigma_propagation.rs: Spd2, ewa_sandwich, log_norm_growth, pillar_5plus_bound |
+| **#321** | 2026-04-30 | fix: 10 pre-existing test failures (cosine_distance, arigraph, parse_triplets) | Fixed cosine inversion, Stagnant ordering, quality_window clear, SPO arg order |
+| **#320** | 2026-04-30 | ci: declare rustfmt + clippy as pinned-toolchain components | rust-toolchain.toml gets components=[rustfmt,clippy]; fixes CI fmt failure |
+| **#319** | 2026-04-30 | fix(transcode): per-month day-validity in parse_iso_date_to_days | Gregorian per-month + leap-year gate before civil_to_days |
+| **#316** | 2026-04-30 | feat(transcode): round-3 typed-value resolver for triples_to_batch | triples_to_batch_with_resolver: Currency→f32, Date→Date32, Id→u64 |
+| **#315** | 2026-04-30 | ci: revert ndarray-branch pin — PR #115 landed on master | Remove temp ndarray branch pin from rust-test.yml + style.yml |
+| **#314** | 2026-04-30 | docs(vision): clear post-F1 staleness items in medcare-foundry-vision.md | §1–§4 DRAFT/forward-tense/PR-N placeholders replaced with real anchors |
+| **#313** | 2026-04-30 | feat(transcode): Phase-2-B triples_to_batch (ExpandedTriple → RecordBatch) | ExpandedTriple stream → N-row RecordBatch, lenient-Utf8, 19 tests |
+| **#312** | 2026-04-30 | feat(transcode): Phase-2-A pushdown classification (Inexact for recognised filters) | OntologyTableProvider classifies entity_type/predicate/nars filters as Inexact |
+| **#311** | 2026-04-30 | docs(vision): mark F1 shipped, restate next deliverable as F2 | medcare-foundry-vision.md §7: F1 parity shipped; F2 RBAC is next posture |
+| **#310** | 2026-04-30 | feat(transcode): r2 fixes — typed Arrow + codec_route + partial writes + CachedOntology | Currency/Date/Id→typed Arrow; CachedOntology; validate_route; from_columns_partial |
+| **#309** | 2026-04-30 | feat(callcenter::transcode): outer ↔ inner ontology mapper + parallelbetrieb | transcode submodule: zerocopy, cam_pq_decode, spo_filter, ontology_table, parallelbetrieb |
+| **#308** | 2026-04-30 | feat: bilingual ontology DTO surface + bgz-tensor workspace inclusion | OntologyDto locale projection; smb_ontology + medcare_ontology; bgz-tensor in workspace |
+| **#307** | 2026-04-30 | refactor: dedup FNV-1a — one canonical hash::fnv1a in contract | contract::hash::fnv1a const fn; 8 call sites unified |
+| **#306** | 2026-04-30 | feat(G4): verb_table tense modulation (Quirk CGEL grounded) | 12 VerbFamily priors + tense_modifier → 144 unique cell values |
+| **#305** | 2026-04-30 | feat(G3): DisambiguateOpts builder + deepnsm caller wiring real fingerprint | DisambiguateOpts builder; sign_binarize_to_binary16k; disambiguator_glue.rs |
+| **#304** | 2026-04-30 | feat(G1): Pearl 2³ causality footprint with PAD-model qualia mapping | compute_pearl_mask() 3-bit SPO→CausalMask; PAD qualia footprint replaces 0.5 |
+| **#303** | 2026-04-30 | feat(F6): FNV-1a scent with scent_u64 accessor + birthday collision tests | scent() FNV-1a fold-to-u8; scent_u64() full 64-bit digest; 10 tests |
+| **#302** | 2026-04-30 | feat(F3): LanceAuditSink with temporal timestamps + full schema round-trip | LanceAuditSink → Lance dataset append; temporal timestamp; O(1) scan_back |
+| **#301** | 2026-04-30 | feat(F1): ColumnMaskRewriter full-tree expression walk + Hash UDF hard-fail | Full-tree OptimizerRule covering Filter/Aggregate/Join; NotYetWiredHashUdf |
+| **#300** | 2026-04-30 | feat(LF-12): Pipeline DAG with StepId derivation + OrchestrationBridge adapter | PipelineDag Kahn's algorithm; FNV-1a StepId; execute_via_bridge; cycle detection |
+| **#299** | 2026-04-29 | revert #294/#295/#296 + clean on top | Reverts #294–#296 confabulation; corrects probe routing (M1/P2-P4 → shader-lab) |
+| **#296** | 2026-04-29 | ideas: COCA-Bundle vs Jina-CLAM bucket comparison (**REVERTED by #299**) | IDEAS.md Open entry for COCA/Jina probe (premise flawed; reverted) |
+| **#295** | 2026-04-29 | docs: probe-queue data-available followup (**REVERTED by #299**) | bf16-hhtl-terrain.md data-available update (inherited bad routing; reverted) |
+| **#294** | 2026-04-29 | docs(probe-queue): honest "needs production data" assessment (**REVERTED by #299**) | bf16-hhtl-terrain.md probe routing table (wrong routing; reverted) |
+| **#293** | 2026-04-29 | jc: drain Probe P1 (γ-phase-offset ranking discrimination) → PASS | probe_p1_gamma_phase.rs; P1 PASS: min Spearman ρ=-0.963 (Dupain-Sós) |
+| **#292** | 2026-04-29 | docs(board): posthoc-correct PRs #290 #291 via canonical board mechanism | CONJECTURE banners; 5 Open IDEAS.md entries; 2 EPIPHANIES.md entries |
+| **#291** | 2026-04-29 | docs: idea journal — proposed application pillars 7/8/9 captured | IDEA_JOURNAL_2026_04_29_FUTURE_PILLARS.md with Pillars 7/8/9 + PASS criteria |
+| **#290** | 2026-04-29 | docs: idea journal — streaming-hydration + fractal-codec captured | IDEA_JOURNAL_2026_04_29_STREAMING_HYDRATION.md separating two ideas |
+| **#289** | 2026-04-29 | jc: Pillar 6 — EWA-Sandwich Σ-push-forward | ewa_sandwich.rs; Pillar 6: 10000/10000 PSD-preserving hops; KS bound tightness 1.467× |
+| **#288** | 2026-04-29 | jc: Σ-Codebook Viability Probe — rules out CausalEdge64 8→16B expansion | sigma_codebook_probe.rs; R²=0.9949 at k=256; CausalEdge64 stays 8 bytes |
+| **#287** | 2026-04-29 | jc: Pillar 5++ — Düker-Zoubouloglou Hilbert-space CLT | dueker_zoubouloglou.rs; Pillar 5++: bundle-of-N in ℝ^16384 → Gaussian limit in ℓ² |
+| **#286** | 2026-04-29 | jc: Pillar 5+ — Köstenberger-Stark concentration on Hadamard 2×2 SPD | koestenberger.rs; Pillar 5+: tightness 0.969× on SPD manifold |
+| **#285** | 2026-04-29 | Re-land #283 unlocks (Quantum, Disambiguator, verb_table, animal-farm) | Quantum mode, Disambiguator trait, verb_table, animal-farm harness; PhaseTag overflow fix |
+| **#284** | 2026-04-29 | Re-land #281 unlocks (PolicyRewriter, DomainProfile) | PolicyRewriter trait, ColumnMaskRewriter, DomainProfile HIPAA thresholds |
+| **#282** | 2026-04-29 | fix: Grammar/Markov hardening — slice unification, kernel wiring | CRITICAL slice fix; rotate_right removed; coherence kernel wired; 363 tests |
+| **#280** | 2026-04-29 | fix: Foundry hardening — sealed RLS, VecDeque audit, URL decode, Plugin handshake | Sealed RLS default; O(1) audit ring; FNV-1a; URL decode; Plugin handshake; 58 tests |
+| **#279** | 2026-04-29 | feat: DeepNSM grammar parser — Markov ±5 bundler, role keys, thinking styles | D0/D2/D3/D4/D5/D6/D7: MarkovBundler, RoleKeySlice, GrammarStyleConfig, 12 YAML configs |
+| **#278** | 2026-04-29 | feat: Foundry parity — RLS rewriter, audit log, PostgREST, with_registry | LF-3/DM-7 RLS; LF-90 audit; DM-8 PostgREST stub; LanceMembrane::with_registry; 35 tests |
+| **#277** | 2026-04-28 | plan: unified Foundry roadmap for SMB + MedCare (corrects #276 framing) | foundry-roadmap-unified-v1.md; correct scale decisions per FormatBestPractices.md |
+| **#276** | 2026-04-28 | plan: Foundry Consumer Parity — shared ontology + UNKNOWN resolutions | foundry-consumer-parity-v1.md; 5 callcenter UNKNOWNs resolved; DM-8 unblocked |
+| **#275** | 2026-04-28 | feat: add lancedb 0.27.2 + pin lance =4.0.0 | lancedb=0.27.2 optional dep; lance exact-pinned =4.0.0 for compat |
+| **#274** | 2026-04-27 | fix: F-01 identity-tear race + F-08 bounds check + F-09 poison recovery | Single ActorState RwLock; poison recovery; push bounds check |
+| **#273** | 2026-04-27 | feat: bump lance 2→4 + datafusion 51→52 + deltalake 0.30→0.31 | Version bumps + API break fixes (invalid_input, DeltaTableProvider migration) |
+| **#272** | 2026-04-27 | feat: Column H — EntityTypeId on BindSpace (Phase 1 of 4) | EntityTypeId u16 on BindSpace; push_typed(); 1-based index; 4 tests |
+| **#271** | 2026-04-27 | plan: BindSpace Columns E/F/G/H — 4→8 SoA integration plan | bindspace-columns-v1.md; 24 deliverables; 7 SOUND / 7 CAUTION / 0 WRONG |
+| **#270** | 2026-04-26 | ci: remove typos spell-check job (too many false positives) | Removed crate-ci/typos from style.yml; cargo fmt --check remains |
+| **#269** | 2026-04-26 | feat: Distance trait + SIMD Hamming/cosine wiring + PaletteDistanceTable + Dockerfile docs | Distance trait; SIMD Hamming/cosine wiring; PaletteDistanceTable 128KB; Dockerfile.md |
+

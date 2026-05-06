@@ -1245,3 +1245,241 @@ Should be designed as one coherent commit, not piecemeal.
 **Revisit when:** the next architectural sweep covers the awareness
 dimension. Until then, awareness stays driver-global. The epiphany
 documents the correct direction so future work doesn't re-derive it.
+
+---
+
+## 2026-05-05 — Tech-debt items extracted from PRs #244–#335
+
+> Items below are ONLY those the PR author EXPLICITLY named as debt, deferred work, known limitation, TODO, stub, or "not yet wired". No inference. Each item cites the PR where the author flagged it.
+
+---
+
+### TD-F10-ACTOR-ID — actor_id semantic fix deferred (PR #274)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:lance-graph-callcenter domain:callcenter
+**Introduced by:** PR #274 (F-10 finding explicitly deferred)
+**Author's words:** "F-10 · HIGH · actor_id = expert as u64 (DEFERRED). Semantic fix requires adding `actor_id: ActorId` to `ExternalIntent` and plumbing through `ingest()`. Deferred to avoid schema change in this PR — should be its own commit with downstream coordination."
+
+---
+
+### TD-ARROW-58 — Arrow 58 blocked until lance 5+ (PR #273, #275)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:lance-graph domain:deps
+**Introduced by:** PR #273 (documented as "Cannot bump"), confirmed in #275
+**Author's words:** "Cannot bump. Both lance 4.0.1 and deltalake 0.31 pin `arrow = "^57"`. Arrow 58 needs lance 5+ (not released). Documented in TD-LANCE-UPGRADE."
+
+---
+
+### TD-ENTITY-TYPE-ID-CACHE — entity_type_id() O(N) linear scan (PR #272)
+
+**Status:** Open
+**Priority:** P3
+**Scope:** crate:lance-graph-contract domain:ontology
+**Introduced by:** PR #272
+**Author's words:** "`entity_type_id()` does a linear scan of `Ontology.schemas` — O(N) per lookup. Fine for N < 100 schemas, but if someone has 1000+ entity types this becomes a problem. Should be a `HashMap<&str, EntityTypeId>` cache on `Ontology`. Not worth optimizing now (N is ~10 for SMB), but flagged."
+
+---
+
+### TD-COLUMN-H-DISPATCH — Column H entity_type not written at dispatch time (PR #272)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:cognitive-shader-driver domain:bindspace
+**Introduced by:** PR #272
+**Author's words:** "The `dispatch()` step that writes entity_type into the SoA (D-H3 in the plan) is NOT wired yet — this PR adds the FIELD but not the dispatch-time write. That's Phase 2 territory because it requires knowing which `OntologySpec` the current triplet matches, which is the novel-pattern-detection logic in D-E3."
+
+---
+
+### TD-CLIPPY-SHADER-DRIVER — no clippy gate on cognitive-shader-driver (PR #272)
+
+**Status:** Open
+**Priority:** P3
+**Scope:** crate:cognitive-shader-driver domain:ci
+**Introduced by:** PR #272
+**Author's words:** "No clippy gate on the shader-driver crate (only contract is gated). The shader-driver has pre-existing clippy debt from the parallel agents."
+
+---
+
+### TD-BINDSPACE-COLUMNS-EFG — Column E/F/G phases not implemented (PR #271)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:cognitive-shader-driver domain:bindspace
+**Introduced by:** PR #271 (plan phase 2/3/4 explicitly deferred)
+**Author's words:** "Phase 3 (Column F) needs a proof-of-concept measuring whether inline awareness actually improves meta_confidence vs the current `1 - F.total` before committing to the full 9-deliverable plan. Phase 4 (Column G) is blocked [on LF-50/52] and speculative."
+
+---
+
+### TD-GRAMMAR-ROTATE-RIGHT-FUTURE — post-bundle permute not yet implemented (PR #282)
+
+**Status:** Open
+**Priority:** P3
+**Scope:** crate:deepnsm domain:grammar
+**Introduced by:** PR #282
+**Author's words:** "`rotate_right` removed. Documented for future per-sentence pre-bundle permute." (rotation removed as it corrupted role-slice alignment; the correct per-sentence-pre-bundle permute is a future item)
+
+---
+
+### TD-POSTGREST-EDGE-CASES — PostgREST filter parsing edge cases not tested (PR #278)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:lance-graph-callcenter domain:postgrest
+**Introduced by:** PR #278
+**Author's words:** "[ ] PostgREST filter parsing edge cases (nested paths, unicode table names)"
+
+---
+
+### TD-RLS-MULTI-TABLE-JOIN — RLS predicate injection on multi-table JOINs not manually reviewed (PR #278)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:lance-graph-callcenter domain:rls
+**Introduced by:** PR #278
+**Author's words:** "[ ] Manual review of RLS predicate injection on multi-table JOINs"
+
+---
+
+### TD-GRAMMAR-UNICODE-RESTORE — ASCII fallback in grammar-landscape.md needs unicode restore (PR #279)
+
+**Status:** Open
+**Priority:** P3
+**Scope:** crate:deepnsm doc:grammar-landscape.md
+**Introduced by:** PR #279
+**Author's words:** "[ ] ASCII→unicode restore on grammar-landscape.md (Finnish ä/ö, Cyrillic, Japanese particles)"
+
+---
+
+### TD-GRAMMAR-MEXICANHAT-VERIFY — WeightingKernel::MexicanHat zero-crossing not verified (PR #279)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:deepnsm domain:grammar
+**Introduced by:** PR #279
+**Author's words:** "[ ] Verify WeightingKernel::MexicanHat zero-crossing matches Ricker wavelet"
+
+---
+
+### TD-SIGMA-CODEBOOK-PRODUCTION — Σ-codebook viability probe used synthetic not production data (PR #288)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:jc domain:sigma-codebook
+**Introduced by:** PR #288
+**Author's words:** "Synthesised distribution is plausible, not from Production measured — with real stream run again to confirm. R² = 0.9949 is knapp über Threshold; für >5-Hop-Multi-Hop-Queries kann der kumulierte Fehler relevant werden."
+
+---
+
+### TD-TRANSCODE-PARALLELBETRIEB — parallelbetrieb is explicitly a transitional bandaid (PR #309)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:lance-graph-callcenter domain:transcode
+**Introduced by:** PR #309
+**Author's words:** "The bandaid framing is for the parallel-evaluation overhead, not for the witness itself. Even at F5 the reconciler stays — MySQL is permanent — but its mode shifts from 'consensus required for any commit' to 'background witness that emits drift events when something diverges'."
+
+---
+
+### TD-TRANSCODE-PHASE4-NARS-SINK — Phase 4 NARS cold sink not covered (PR #310)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:lance-graph-callcenter domain:transcode
+**Introduced by:** PR #310
+**Author's words:** "Phase 4 (NARS cold sink) — not covered. Continues to be a future PR aligned with `.claude/plans/sql-spo-ontology-bridge-v1.md`."
+
+---
+
+### TD-TRANSCODE-PHASE5-BINDSPACE-TO-DTO — BindSpace → outer-DTO reverse path not wired (PR #310)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:lance-graph-callcenter domain:transcode
+**Introduced by:** PR #310
+**Author's words:** "Phase 5 (BindSpace → outer-DTO direction) — `zerocopy.rs` still only goes outer → Arrow. The reverse path (BindSpace columns → external SoA batch) needs the producer-side accessor in `cognitive-shader-driver` first."
+
+---
+
+### TD-TRANSCODE-PHASE2B-SPOSTORE — Phase-2-B SpoStore scan not implemented (PR #312)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:lance-graph-callcenter domain:transcode
+**Introduced by:** PR #312
+**Author's words:** "Replace `MemTable::scan` delegate with a custom `ExecutionPlan` walking `SpoStore`'s `query_forward` / `query_reverse` / `query_relation` according to the `SpoLookup` shape. Flip recognised filters from `Inexact` → `Exact` once that scan is trusted to strict-enforce."
+
+---
+
+### TD-TRANSCODE-ROUND3-TYPED-DEFERRED — several SemanticType→Arrow conversions deferred (PR #316)
+
+**Status:** Open
+**Priority:** P3
+**Scope:** crate:lance-graph-callcenter domain:transcode
+**Introduced by:** PR #316
+**Author's words:** "`Date(Month)` / `Date(Year)` precisions — today only `YYYY-MM-DD` parses; round-4 plumbs the precision into the parser. `Geo` / `File` / `Image` typed reconstruction — round-4 candidates. Async resolver — round-5. `FixedSizeListF32` / `FixedSizeBinary` single-bytes resolver — round-5 wide-payload resolver."
+
+---
+
+### TD-SIGMA-B3-CODEBOOK-BOOT — Σ codebook static + boot-load not yet wired (PR #323)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:cognitive-shader-driver domain:sigma
+**Introduced by:** PR #323
+**Author's words:** "The Σ codebook itself is not loaded here — that is a B3 concern. The codebook static + boot-load-from-disk lives in `lance-graph-contract::sigma_propagation`. This PR only allocates the per-row index column."
+
+---
+
+### TD-SIGMA-B4-DISPATCH — Σ-propagate in shader-driver dispatch stage not wired (PR #323, #322)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:cognitive-shader-driver domain:sigma
+**Introduced by:** PR #322 (explicit B4 follow-up item)
+**Author's words:** "B4 shader-driver Σ-propagate (later PR): in `ShaderDriver::dispatch()` between [5] edge emission and [6] FreeEnergy gate, propagate `sigma_path = ewa_sandwich(...)` along the resonance chain. Reject cycles whose `log_norm_growth` exceeds `pillar_5plus_bound`."
+
+---
+
+### TD-FNV-COPIES-THINKING-HOLOGRAPH — 2 FNV-1a copies remain in thinking-engine + holograph (PR #307)
+
+**Status:** Open
+**Priority:** P3
+**Scope:** crate:thinking-engine crate:holograph domain:dedup
+**Introduced by:** PR #307
+**Author's words:** "2 copies remain in `thinking-engine` and `holograph` (don't depend on contract) — annotated."
+
+---
+
+### TD-CONTRACT-TEST-COVERAGE-CI — lance-graph-contract tests not in CI gate until PR #328 (PR #326)
+
+**Status:** Paid 2026-05-01 (PR #328)
+**Priority:** P2
+**Scope:** crate:lance-graph-contract domain:ci
+**Introduced by:** PR #322 (latent); surfaced in PR #326
+**Author's words (PR #326):** "`crates/lance-graph-contract` does have a gating clippy job, but the workspace test job runs `cargo test` against `crates/lance-graph` only — `lance-graph-contract`'s tests don't fail any CI gate today."
+**Payoff:** PR #328 added `cargo test --manifest-path crates/lance-graph-contract/Cargo.toml --lib` to CI.
+
+---
+
+### TD-BGZ-TENSOR-5-FAILURES-330 — 5 bgz-tensor platform-sensitive size-assertion test failures (PR #330)
+
+**Status:** Open
+**Priority:** P2
+**Scope:** crate:bgz-tensor domain:ci
+**Introduced by:** PR #308 (workspace inclusion); re-confirmed in PR #330
+**Author's words (PR #330):** "bgz-tensor pre-existing failures: 5 platform-sensitive size-assertion tests that are not in the CI gate."
+
+---
+
+### TD-FMT-STANDALONE-CRATES-4400 — ~4400 rustfmt drift hunks in excluded/standalone crates (PR #329)
+
+**Status:** Open
+**Priority:** P3
+**Scope:** domain:rustfmt crate:thinking-engine crate:holograph crate:cognitive-shader-driver crate:bgz17 crate:deepnsm crate:jc (and others)
+**Introduced by:** PR #329 (audit surfaced)
+**Author's words:** "Most 'drift' in the standalones is intentional author style (single-line `if`s, visually-aligned struct literals, two-space-comment alignment). No CI gate exists to lock the canonical style. Two viable follow-up paths: Path A (per-crate rustfmt.toml overrides) or Path B (mass-rewrite + CI gate for every crate)."
+

@@ -775,3 +775,155 @@ Cross-ref: `.claude/knowledge/phi-spiral-reconstruction.md`
 entries. IDEAS 2026-04-19 "Fractal round-trip codec" (superseded by
 this — single-container zipper is cheaper than triple-channel).
 bgz17 crate as the substrate.
+
+---
+
+## 2026-05-05 — Future-work items extracted from PRs #244–#335
+
+> Items below are ONLY those the PR author EXPLICITLY named as future work, "could do", "follow-up", "next PR", or "out of scope". No inference. Each item cites the PR.
+
+---
+
+### IDEA-B1-HARDWARE-BACKENDS — AMX/MKL hardware backends for sigma_propagation (PR #322)
+
+**Status:** Open 2026-05-05
+**Priority:** P3
+**Source:** PR #322 explicit "What this PR does NOT do"
+**Author's words:** "No hardware backends (AMX/MKL via ndarray #119/#121). That's B1.5 follow-up."
+
+---
+
+### IDEA-PILLAR7-ALPHA-ACCUMULATION — Pillar 7: Front-to-Back α-accumulation with Early-Termination (PRs #289, #291)
+
+**Status:** Open 2026-05-05 (partially implemented as B5 in PR #324)
+**Priority:** P2
+**Source:** PR #289 (Pillar 6 out-of-scope section), PR #291 (idea journal)
+**Author's words (PR #289):** "Pillar 7: Front-to-Back α-Akkumulation mit Early-Termination — direkte Anwendung von Pillar 6 + Pillar 5+ auf HHTL-Cascade-Beschleunigung. 60-90% Compute-Ersparnis."
+**Note:** PR #324 shipped AlphaFrontToBack MergeMode (B5); Pillar 7 proof-in-code still deferred.
+
+---
+
+### IDEA-PILLAR8-ADAPTIVE-DENSIFICATION — Pillar 8: Adaptive Densification for online Σ-codebook learning (PRs #288, #291)
+
+**Status:** Open 2026-05-05
+**Priority:** P2
+**Source:** PR #291 (idea journal), PR #288 (sigma codebook probe)
+**Author's words (PR #291):** "Pillar 8 — Adaptive Densification für Online-Codebook-Lernen. Wendet an: KS Theorem 1 + sigma_codebook_probe (#288, R²=0.9949). Codebook wird selbst-verbessernd ohne Container-Wachstum. Split/Prune-Mechanik, ~250-300 Zeilen. Risiko: Split/Prune-Heuristik könnte oszillieren."
+
+---
+
+### IDEA-PILLAR9-SH-THINKING-MANIFOLD — Pillar 9: SH-coefficients as continuous Thinking-Style manifold (PR #291)
+
+**Status:** Open 2026-05-05 — HOLD until explicit architecture decision (touches production code)
+**Priority:** P3
+**Source:** PR #291 (idea journal), PR #292 (TOUCHES PRODUCTION CODE tag added)
+**Author's words (PR #291):** "Pillar 9 — SH-Koeffizienten als kontinuierliche Thinking-Style-Achse. Wendet an: Düker-Zoubouloglou Hilbert-Raum CLT. Substrat-Impact: kontinuierliche Thinking-Style-Mannigfaltigkeit statt kategorial. Berührt produktiven Code (`learning::cognitive_styles`) — braucht explizites Go-Ahead VOR Implementierung."
+
+---
+
+### IDEA-SAFETENSOR-STREAMING — Safetensor streaming as n-dimensional meaning accumulation (PR #290)
+
+**Status:** Open 2026-05-05
+**Priority:** P2
+**Source:** PR #290 (idea journal)
+**Author's words:** "Modelle (1B–70B params) Tile-für-Tile durch die Pipeline streamen statt vollständig laden. Pro Tile: Hadamard-rotieren, Σ extrahieren, EWA-Sandwich propagieren, in SchemaSidecar Block 14/15 akkumulieren. 7B-Modell ≈ 3.8 min Streaming-Zeit."
+
+---
+
+### IDEA-FRACTAL-CODEC — Family-Bounds as global fractal coding/decoding (PR #290)
+
+**Status:** Open 2026-05-05 — CONJECTURE, requires diagnostic probe first
+**Priority:** P3
+**Source:** PR #290 (idea journal), PR #292 (CONJECTURE tag)
+**Author's words:** "Das gesamte Substrat wird on-demand fraktal dekodiert statt vollständig materialisiert. Voraussetzung: globale Selbst-Ähnlichkeit der family bounds. Status: spekulativ. Globale Fraktalität ist eine Hypothese, kein gemessener Fakt."
+
+---
+
+### IDEA-INVERTED-PYRAMID-AWARENESS — Inverted-pyramid awareness streaming via CausalEdge64 (PR #299)
+
+**Status:** Open 2026-05-05
+**Priority:** P2
+**Source:** PR #299 (replacement IDEAS.md entry after revert)
+**Author's words:** "Open: inverted-pyramid awareness streaming via CausalEdge64 durch SPO+COCA→CAM_PQ pipeline."
+
+---
+
+### IDEA-CAUSAL-EDGE-TENSOR-SIDECAR — CausalEdgeTensor as 9-byte sidecar (CausalEdge64 + 1 byte Σ index) (PR #288)
+
+**Status:** Open 2026-05-05
+**Priority:** P2
+**Source:** PR #288 (sigma codebook probe conclusion)
+**Author's words:** "Mit diesem Probe-Resultat kann jetzt `CausalEdgeTensor`-Variante als 9-Byte-Sidecar (`CausalEdge64` + 1 Byte Σ-Codebook-Index) entworfen werden, ODER äquivalent über Schemasidecar Block 14/15. Caller-Wahl, beide architektonisch tragbar."
+
+---
+
+### IDEA-PILLAR5PP-OPERATOR-G — Pillar 5++ with Hermite rank ≥ 2 (operator G ≠ identity) (PR #287)
+
+**Status:** Open 2026-05-05
+**Priority:** P3
+**Source:** PR #287 (out-of-scope section)
+**Author's words:** "Operator G ≠ identity (Hermite rank ≥ 2) — kann als Erweiterungs-Test in einem späteren PR."
+
+---
+
+### IDEA-PROPAGATE-HOLOGRAPH-RESONANCE — propagate() in holograph::resonance (Gauss-convolution operator) (PRs #286, #287, #289)
+
+**Status:** Open 2026-05-05
+**Priority:** P2
+**Source:** PRs #286, #287, #289 (each names this as out-of-scope)
+**Author's words (PR #289):** "`propagate()` in `holograph::resonance` — orthogonal zur Encoding-Frage; wartet auf Architektur-Entscheidung."
+
+---
+
+### IDEA-ASYNC-PIPELINE-DAG — Async fan-out executor for PipelineDag (PR #300)
+
+**Status:** Open 2026-05-05
+**Priority:** P2
+**Source:** PR #300
+**Author's words:** "Synchronous-only executor; async fan-out is an explicit follow-up (documented in module doc)."
+
+---
+
+### IDEA-POLICY-HASH-UDF — policy_hash_v1 UDF registration (PR #301)
+
+**Status:** Open 2026-05-05
+**Priority:** P2
+**Source:** PR #301
+**Author's words:** "`NotYetWiredHashUdf` binds at plan time, returns `NotImplemented('policy_hash_v1 UDF not yet registered')` at execute. Plans build; execution fails loud."
+
+---
+
+### IDEA-TRANSCODE-GEO-FILE-IMAGE — Geo/File/Image typed reconstruction in triples_to_batch (PR #316)
+
+**Status:** Open 2026-05-05
+**Priority:** P3
+**Source:** PR #316
+**Author's words:** "`Geo` / `File` / `Image` typed reconstruction — round-4 candidates (collapse to `Utf8` today)."
+
+---
+
+### IDEA-TRANSCODE-ASYNC-RESOLVER — Async resolver for triples_to_batch_with_resolver (PR #316)
+
+**Status:** Open 2026-05-05
+**Priority:** P3
+**Source:** PR #316
+**Author's words:** "Async resolver — round-5 (for resolvers that hit a remote store)."
+
+---
+
+### IDEA-PILLAR5PLUS-HIGHER-DIM-SPD — Higher-dim SPD (3×3, n×n) for Pillar 6 logic (PR #289)
+
+**Status:** Open 2026-05-05
+**Priority:** P3
+**Source:** PR #289
+**Author's words:** "Higher-dim SPD (3×3, n×n) — Pillar 6 Logik erweitert sich monoton."
+
+---
+
+### IDEA-FMT-TIER-B-STANDALONE — Per-crate rustfmt.toml overrides + mass-reformat (PR #329)
+
+**Status:** Open 2026-05-05
+**Priority:** P3
+**Source:** PR #329 (workspace-wide audit)
+**Author's words:** "Path A (low): Add per-crate `rustfmt.toml` overrides where authors want one-line accessors / table-aligned literals [...] and then run `cargo fmt --write` per crate. Lets the author preferences coexist with `cargo fmt`. Path B (high): Decide on one canonical style for the whole repo, mass-rewrite, and add `cargo fmt --check` to CI for every crate. [...] Both should be a maintainer / `truth-architect` decision, not an autonomous agent's."
+

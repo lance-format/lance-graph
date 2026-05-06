@@ -371,3 +371,747 @@
 This file is the fastest bootstrap available for a new session on
 this workspace. Load it, then load 1-2 knowledge docs as the domain
 triggers, then start working. Target: 3-5 turn cold start, not 30.
+
+---
+
+## 2026-05-05 BACKFILL — PRs #244–#335 (retrofitted from PR descriptions)
+
+> Convention waiver: this section is APPENDED at the bottom of the file rather than PREPENDED, because governance permits only `tee -a` writes. Entries within this section are newest-first by PR number. Header dated; future PR_ARC entries should resume the standard PREPEND-at-top convention once a Write/Edit channel is restored, or continue this backfill section.
+
+---
+
+### #335 — Claude/thought cycle soa integration plan (merged 2026-05-05)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** Two new knowledge docs: `.claude/knowledge/gaussian-splat-cam-plane-workaround.md` and `.claude/knowledge/entropy-budget-codebook-superposition.md`; 12-commit PR with 5835 additions across 12 files (full body is a bare file list — no template sections present).
+**Locked:** —
+**Deferred:** —
+**Docs:** `.claude/knowledge/gaussian-splat-cam-plane-workaround.md`, `.claude/knowledge/entropy-budget-codebook-superposition.md`
+
+---
+
+### #330 — docs: add Cursor Cloud specific instructions to AGENTS.md (merged 2026-05-01)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** `AGENTS.md` `## Cursor Cloud specific instructions` section documenting ndarray sibling path requirement, CI-gated check commands, excluded-crate fmt-drift inventory, bgz-tensor pre-existing failures.
+**Locked:** ndarray must be cloned to `/ndarray` for path deps to resolve; 5 bgz-tensor failures are known/not-CI-gated.
+**Deferred:** —
+**Docs:** `AGENTS.md`
+
+---
+
+### #329 — style: apply rustfmt to contract lib.rs + python bindings (Tier-A drift) (merged 2026-05-01) [infra/format]
+
+Tier-A rustfmt drift sweep: `lance-graph-contract/src/lib.rs` (sigma_propagation module order), `lance-graph-python/src/catalog.rs`, `lance-graph-python/src/graph.rs`. No semantic change.
+
+---
+
+### #328 — ci(test): add lance-graph-contract unit tests to the test gate (merged 2026-05-01) [infra/format]
+
+Adds `cargo test --manifest-path crates/lance-graph-contract/Cargo.toml --lib` step to `rust-test.yml` so contract-crate logic regressions trip CI before merge.
+
+---
+
+### #327 — style(shader-driver): drop double-space alignment in bindspace.rs comments (merged 2026-05-01) [infra/format]
+
+Two-line rustfmt drift fix in `cognitive-shader-driver/src/bindspace.rs` introduced by PR #323.
+
+---
+
+### #326 — fix(sigma-propagation): use non-identity seed in log_norm_growth_negative test (merged 2026-05-01)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** Corrected test `log_norm_growth_negative_when_m_attenuates` to seed at `4·I` (not `I`) so attenuation actually reduces log-norm; comment documents the `seed = I` trap for future readers.
+**Locked:** `log_norm_growth` measures signed change in log-Frobenius distance from identity; seeding at `I` makes growth structurally non-negative regardless of M.
+**Deferred:** Extending workspace test job to cover `lance-graph-contract` beyond clippy (see PR #328).
+**Docs:** —
+
+---
+
+### #325 — chore(toolchain): bump pin from 1.94.0 to 1.94.1 (merged 2026-04-30) [infra/format]
+
+`rust-toolchain.toml` channel bumped to `1.94.1` to match sibling repos; policy comment added.
+
+---
+
+### #324 — feat(shader-driver): Pillar-7 α-front-to-back-merge sink mode (B5) (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `MergeMode::AlphaFrontToBack` (= 3) in `lance-graph-contract::collapse_gate`, `ALPHA_SATURATION_THRESHOLD = 0.99`
+- `ShaderHit::confidence_to_alpha()` helper
+- `AlphaComposite` carrier + `ShaderCrystal::alpha_composite` field
+- `ShaderDispatch.merge_override` + `alpha_saturation_override`
+- Stage [7] in `ShaderDriver::dispatch()` dispatches on effective MergeMode; Kerbl-2023 EWA loop replaces top-K only when `AlphaFrontToBack` selected
+**Locked:** Existing Bundle / Xor / Superposition paths bit-exact unchanged; edits local to stage [7].
+**Deferred:** —
+**Docs:** —
+
+---
+
+### #323 — feat(cognitive-shader-driver): add Σ-codebook-index column to FingerprintColumns (B2) (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `FingerprintColumns.sigma: Box<[u8]>` (1 byte/row, index into 256-entry Σ codebook)
+- `FingerprintColumns::zeros(len)` allocates sigma alongside existing planes
+- `sigma_at(row)` / `write_sigma(row, idx)` accessors
+- `BindSpace::byte_footprint` updated to 71777 (+1)
+**Locked:** Σ codebook itself not loaded here (B3 concern); no public API breaks.
+**Deferred:** B3 codebook static + boot-load-from-disk; B4 shader-driver Σ-propagate in dispatch stage.
+**Docs:** —
+
+---
+
+### #322 — feat(contract): promote EWA-Sandwich Σ-propagation kernel to lance-graph-contract (B1) (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `crates/lance-graph-contract/src/sigma_propagation.rs` (~520 LOC): `Spd2` (2×2 SPD packed), `ewa_sandwich`, `ewa_inverse`, `log_norm_growth`, `pillar_5plus_bound`
+- `pub mod sigma_propagation` in `lib.rs`
+- 12 unit tests; 13 total (one was broken at merge, fixed by #326)
+**Locked:** `crates/jc/src/ewa_sandwich.rs` unchanged (proof harness, zero-deps, regression-certificate posture preserved); contract module is canonical production surface.
+**Deferred:** Hardware backends (AMX/MKL via ndarray); BindSpace integration (B2/B3/B4).
+**Docs:** —
+
+---
+
+### #321 — fix: 10 pre-existing test failures (cosine_distance, arigraph orchestration, parse_triplets) (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `cosine_distance()` restored `1.0 -` inversion (SIMD helper returns similarity, not distance)
+- `GraphSensorium::suggested_bias()` Stagnant condition moved before Explore (was unreachable)
+- `switch_mode` clears `quality_window` on regime change to prevent stale-evidence restore failure
+- `XaiClient::parse_triplets` argument order fixed: `Triplet::new(s, o, r, t)` not `(s, r, o, t)`
+**Locked:** 846/846 `lance-graph` unit tests pass post-fix.
+**Deferred:** Type-deduplication of `GraphSensorium` across `orchestrator.rs` and `sensorium.rs` (pre-existing tech debt, orthogonal).
+**Docs:** —
+
+---
+
+### #320 — ci: declare rustfmt + clippy as pinned-toolchain components (merged 2026-04-30) [infra/format]
+
+`rust-toolchain.toml` gains `components = ["rustfmt", "clippy"]` so pinned channel installs them at bootstrap; fixes `cargo-fmt not installed for 1.94.0` CI failure.
+
+---
+
+### #319 — fix(transcode): per-month day-validity in parse_iso_date_to_days (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** Per-month max-day validation + Gregorian leap-year rule (century rule: div-by-100-not-400 is NOT leap) in `parse_iso_date_to_days`; rejects April-31, Feb-30, 1900-02-29, etc. 2 new tests.
+**Locked:** Howard Hinnant `civil_to_days` itself is correct; gate inputs before calling it.
+**Deferred:** `Date(Month)` / `Date(Year)` precision parsing (round-4).
+**Docs:** —
+
+---
+
+### #316 — feat(transcode): round-3 typed-value resolver for triples_to_batch (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `triples_to_batch_with_resolver(soa, triples, resolver)` — closure `Fn(&str) -> Option<Vec<u8>>` maps `object_label` to bytes; typed Arrow scalars emitted per `SemanticType`
+- `parse_iso_date_to_days` (Howard Hinnant civil_to_days, public-domain)
+- `TranscodeError::ParseFailure { column, reason }` for Required-column parse failures
+- Type mapping: `Currency→Float32`, `Date→Date32`, `CustomerId/InvoiceNumber→UInt64`, rest `Utf8`
+- 21 tests total (+8 new)
+**Locked:** Required column parse failure → typed error (not silent null); Optional column parse failure → null. `triples_to_batch` (round-1 lenient-Utf8) unchanged for callers without resolver.
+**Deferred:** `Date(Month)`/`Date(Year)` precisions; `Geo`/`File`/`Image` typed reconstruction; async resolver; `FixedSizeListF32`/`FixedSizeBinary` wide-payload resolver.
+**Docs:** —
+
+---
+
+### #315 — ci: revert ndarray-branch pin — PR #115 has landed on master (merged 2026-04-30) [infra/format]
+
+Removes temporary `ref: claude/continue-lance-graph-ndarray-Ld786` CI pin from `rust-test.yml` and `style.yml` (4 occurrences); ndarray PR #115 merged 2026-04-30 07:01 UTC.
+
+---
+
+### #314 — docs(vision): clear post-F1 staleness items (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** `.claude/medcare-foundry-vision.md` §1–§4 staleness cleared: DRAFT header removed, §2/§3/§4 forward-tense rewritten with actual PR anchors (#278, #280, #284, #302), latency benchmark explicitly split from parity (shipped) vs benchmark (not started).
+**Locked:** No latency/throughput numbers claimed; tone rule ("brutally honest, no hype") preserved.
+**Deferred:** —
+**Docs:** `.claude/medcare-foundry-vision.md`
+
+---
+
+### #313 — feat(transcode): Phase-2-B triples_to_batch (ExpandedTriple stream → RecordBatch) (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `triples_to_batch(soa, &[ExpandedTriple]) → RecordBatch` — N subjects → N rows lex-sorted by `subject_label`
+- `round1_lenient_schema(soa)` — all body columns nullable `Utf8`
+- `TranscodeError::{EntityTypeMismatch, BadSubjectLabel}` variants
+- 7 new tests (19 total in `transcode::zerocopy`)
+**Locked:** `object_label` is FNV-1a encoded so round-1 keeps all body as `Utf8`; typed value reconstruction is round-3. Undeclared predicates silently dropped (BBB outer-view rule).
+**Deferred:** Typed-value reconstruction (round-3, PR #316); async SpoStore reader; fingerprint→entity_id side-table (consumer-side state).
+**Docs:** —
+
+---
+
+### #312 — feat(transcode): Phase-2-A pushdown classification (Inexact for recognised filters) (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** `OntologyTableProvider::supports_filters_pushdown` classifies `entity_type=`, `entity_id=`, `predicate=`, `nars_frequency>`, `nars_confidence>` as `Inexact`; unknown columns / undeclared entity types as `Unsupported`; symmetric `lit op col` handled. 7 new tests (11 total).
+**Locked:** Classification is `Inexact` (not `Exact`) until Phase-2-B SpoStore scan replaces MemTable delegate. DataFusion must still apply filter as residual.
+**Deferred:** Phase-2-B: replace MemTable scan with custom `ExecutionPlan` walking SpoStore; flip to `Exact` once trusted.
+**Docs:** —
+
+---
+
+### #311 — docs(vision): mark F1 shipped, restate next deliverable as F2 RBAC wiring (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** `.claude/medcare-foundry-vision.md` §7 rewritten: "F1 has shipped" with concrete cross-links (MedCareV2 #1/#2/#3, medcare-rs #71, lance-graph #309); F2 RBAC+audit on read path named as next posture.
+**Locked:** §1–§6 unchanged; tone rule preserved.
+**Deferred:** F1 latency benchmark (correctness shipped; benchmark not started).
+**Docs:** `.claude/medcare-foundry-vision.md`
+
+---
+
+### #310 — feat(transcode): r2 fixes — typed Arrow + codec_route + partial writes + CachedOntology + route validation (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `arrow_type_for_semantic`: `Currency→Float32`, `Date→Date32`, `CustomerId/InvoiceNumber→UInt64` (was all `Utf8`)
+- `CachedOntology` upstream with `Arc<Ontology>` + eagerly-projected DTOs per locale
+- `validate_route(route, ontology) → Result<(), String>` + 4 tests
+- `from_columns_partial` — allows missing Optional/Free columns; Required + undeclared still rejected
+- `route_for_column` reads `OuterColumn.codec_route` (was heuristic `route_tensor`)
+**Locked:** `route_for_column` reads contract's own field — transcode layer can never disagree with schema author's intent.
+**Deferred:** Phase 4 (NARS cold sink); Phase 5 (BindSpace → outer-DTO direction).
+**Docs:** —
+
+---
+
+### #309 — feat(callcenter::transcode): outer ↔ inner ontology mapper + parallelbetrieb (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `lance-graph-callcenter::transcode` submodule with 5 modules: `zerocopy`, `cam_pq_decode`, `spo_filter`, `ontology_table`, `parallelbetrieb`
+- `OuterColumn`/`OuterSchema`/`OwnedColumn`/`from_columns` (zerocopy, refuses undeclared columns)
+- `CamPqDecoder` trait + `PassthroughDecoder` for `CodecRoute::{Skip, Passthrough}`
+- `SpoFilterTranslator`: SQL filter terms → `SpoLookup` via `fnv1a`
+- `OntologyTableProvider`: DataFusion `TableProvider` over `(Ontology, entity_type)` backed by `MemTable`
+- `DriftEvent`/`DriftKind`/`Reconciler` trait (parallelbetrieb, MySQL↔DataFusion reconciler)
+- 26 tests; `async-trait = "0.1"` dep added
+**Locked:** `parallelbetrieb` is explicitly a transitional bandaid; no Foundry primitive in that module; no silent reconciliation.
+**Deferred:** Phase 2-B (SpoStore reader replacing MemTable scan); Phase 4 (NARS cold sink); Phase 5 (BindSpace → outer-DTO reverse path).
+**Docs:** —
+
+---
+
+### #308 — feat: bilingual ontology DTO surface + bgz-tensor workspace inclusion (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `Locale`/`Label`/`OntologyBuilder.locale+label` fields in `lance-graph-contract::ontology`
+- `lance-graph-callcenter::ontology_dto`: `OntologyDto`, `EntityTypeDto`, `PropertyDto`, `LinkTypeDto`, `ActionTypeDto` + `OntologyDto::from_ontology(ontology, locale)`
+- `smb_ontology()` (Customer/Invoice/TaxDeclaration) and `medcare_ontology()` (Patient/Diagnosis/LabResult/Prescription) canonical examples
+- `bgz-tensor` moved from `exclude` to workspace `members` with `ndarray_compat.rs` shim
+- 194/200 bgz-tensor tests (6 pre-existing failures in experimental paths)
+**Locked:** `OntologyDto::from_ontology` is the single external projection function; bilingual labels travel with the ontology.
+**Deferred:** OntologyDelta column on BindSpace (Q3); DM-8b Lance-backed PostgREST; AU-1 AuditEntry shape unification; TT-1 `scan_as_of`; ndarray SIMD dtype gaps.
+**Docs:** —
+
+---
+
+### #307 — refactor: dedup FNV-1a — one canonical hash::fnv1a in lance-graph-contract (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** `crates/lance-graph-contract/src/hash.rs` — `const fn fnv1a(bytes) → u64` + `fnv1a_str` convenience + 4 tests. 8 call sites updated; 2 copies remain in `thinking-engine` and `holograph` (don't depend on contract, annotated).
+**Locked:** Canonical FNV vectors pinned: `""→0xcbf29ce484222325`, `"a"→0xaf63dc4c8601ec8c`, `"foobar"→0x85944171f73967e8`.
+**Deferred:** —
+**Docs:** —
+
+---
+
+### #306 — feat(G4): verb_table tense modulation (Quirk CGEL grounded) (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- 12 `VerbFamily` base priors across 4 semantic categories (Change/Action/State/Discovery)
+- `tense_modifier(Tense) → SlotPriorDelta` — Quirk et al. CGEL §4.21–4.27 grounded; 7 tense modifiers
+- `SlotPrior::combine(delta)` with `[0.0, 1.0]` clamp
+- `Tense::ALL` const array in `role_keys.rs`
+- 144 cells now have 144 unique values (was 12 broadcast)
+**Locked:** Tense modulation is linguistically grounded (Quirk CGEL cited); Perfect/Imperative priors differ from Present.
+**Deferred:** —
+**Docs:** —
+
+---
+
+### #305 — feat(G3): DisambiguateOpts builder + deepnsm caller wiring real fingerprint (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `DisambiguateOpts` builder replaces 4-method explosion; legacy methods `#[deprecated]`
+- `crates/deepnsm/src/disambiguator_glue.rs`: `sign_binarize_to_binary16k(&[f32]) → Box<[u64; 256]>` + `disambiguate_with_trajectory` (MarkovBundler→ContextChain bridge)
+- `sign_binarize`: f32 bundle → 16,384 bits (v≥0.0 → 1) packed into 256 u64 words → `CrystalFingerprint::Binary16K`
+**Locked:** `Binary16K` is an enum variant of `CrystalFingerprint`, not a newtype; sign-binarization happens in deepnsm (not contract) to preserve zero-dep invariant.
+**Deferred:** —
+**Docs:** —
+
+---
+
+### #304 — feat(G1): Pearl 2³ causality footprint with PAD-model qualia mapping (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `compute_pearl_mask()` derives 3-bit mask from SPO triple (S=bit2, P=bit1, O=bit0), matches `causal-edge::pearl::CausalMask` repr
+- PAD-model qualia footprint replaces neutral 0.5 placeholder; Agency←Dominance, Activity←Activation, Affection←Arousal
+- `#[cfg(feature = "grammar-triangle")]` removed from core Pearl mask code
+**Locked:** Pearl mask uses 3-bit u8 without importing `CausalEdge64` — deepnsm dep tree stays clean.
+**Deferred:** —
+**Docs:** —
+
+---
+
+### #303 — feat(F6): FNV-1a scent with scent_u64 accessor + birthday collision tests (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `scent()`: FNV-1a hash of canonical hex path, folded to u8; replaces XOR-fold stub
+- `scent_u64()`: full 64-bit FNV-1a digest (CAM-PQ Phase C downstream needs unfolded bits)
+- FNV-1a inline (no crate dep); `scent_stub()` deprecated alias preserved
+- `lance_membrane.rs` migrated to `scent()`; 10 tests
+**Locked:** FNV-1a inline; `scent_u64()` fold-matches `scent()`.
+**Deferred:** —
+**Docs:** —
+
+---
+
+### #302 — feat(F3): LanceAuditSink with temporal timestamps + full schema round-trip (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `LanceAuditSink` implementing `AuditSink` — writes `AuditEntry` to Lance dataset via Arrow RecordBatch append
+- Temporal timestamp: `DataType::Timestamp(Millisecond, Some("UTC"))` for DataFusion temporal predicates
+- Full schema: `tenant_id`, `actor_id`, `statement_hash`, `timestamp`, `action`, `rls_predicates_added`, `rewritten_plan`
+- `scan_back(n)` uses `scanner.limit(Some(n), Some(skip))` (O(1), not full-scan)
+- Feature-gated behind `audit-log`; 14 tests
+**Locked:** Lance v4 `Scanner::limit(Option, Option)` verified at source line 1344.
+**Deferred:** —
+**Docs:** —
+
+---
+
+### #301 — feat(F1): ColumnMaskRewriter with full-tree expression walk + Hash UDF hard-fail (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `ColumnMaskRewriter` as DataFusion `OptimizerRule` — `LogicalPlan::map_expressions` + `Expr::transform_down` covers Filter/Projection/Aggregate/Join/Sort
+- `NotYetWiredHashUdf` (ScalarUDFImpl) binds at plan time, errors loudly at execute — no silent placeholder
+- Truncate via `substr(col, 1, n)` (DataFusion built-in unicode substr)
+- `TreeNodeRecursion::Jump` after Column→ScalarFunction wrap prevents infinite recursion
+- 15 policy tests, 3 failing-first tests proving the WHERE/JOIN/GROUP BY leak existed
+**Locked:** Full-tree walk is security-critical; initial impl only rewrote Projection (leaked through Filter/Aggregate).
+**Deferred:** —
+**Docs:** —
+
+---
+
+### #300 — feat(LF-12): Pipeline DAG with StepId derivation + OrchestrationBridge adapter (merged 2026-04-30)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `PipelineDag` (482 LOC): Kahn's algorithm topological executor with `depends_on` DAG edges
+- `UnifiedStep::id()` computes FNV-1a over `step_id` bytes (eliminates `id: 0` landmine across 4 callers)
+- `execute_via_bridge<B>(&self, bridge: &B)` wires PipelineDag into canonical contract pattern
+- Cycle detection (multi-node + self-loop); `PipelineError::{MissingDependency, CycleDetected, StepFailed, DuplicateStepId}`
+- `depends_on: Vec<StepId>` added to `UnifiedStep`; 12 tests
+**Locked:** Synchronous-only executor; async fan-out is explicit follow-up.
+**Deferred:** Async fan-out executor.
+**Docs:** —
+
+---
+
+### #299 — revert #294/#295/#296 + clean on top (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source. REVERT PR — reverts #294, #295, #296.
+
+**Added:**
+- Reverts: #296 (COCA-Bundle idea — premise false: CAM_PQ IS COCA-based, one pipeline), #295 (data-available followup — inherited wrong routing from #294), #294 (probe-queue routing assessment — M1 wrongly routed to bgz-tensor/CHAODA; P2-P4 wrongly routed to standalone bgz-tensor calibrate instead of shader-lab WireSweep)
+- Clean replacement content in `bf16-hhtl-terrain.md`: M1→`polarquant_hip_probe.rs`+`turboquant_correction_probe.rs`; P2-P4→shader-lab WireSweep; architecture notes (CAM_PQ=COCA, ICC family heel, CascadeConfig, jitson JIT)
+- `EPIPHANIES.md` FINDING: existing lab infra covers M1/P2-P4
+- `IDEAS.md` Open: inverted-pyramid awareness streaming via CausalEdge64
+**Locked:** CAM_PQ IS COCA-based (not separate); P2-P4 belong in shader-lab WireSweep, not standalone jc.
+**Deferred:** —
+**Docs:** `.claude/knowledge/bf16-hhtl-terrain.md`, `.claude/board/EPIPHANIES.md`, `.claude/board/IDEAS.md`
+
+---
+
+### #296 — ideas: COCA-Bundle vs Jina-CLAM bucket comparison (Probe candidate) (merged 2026-04-29) — REVERTED by #299
+
+**Confidence (2026-05-05):** Retrofitted from PR description — REVERTED by PR #299. Content removed from main.
+
+**Added:** `IDEAS.md` Open entry for COCA-Bundle vs Jina-CLAM bucket comparison probe candidate.
+**Locked:** —
+**Deferred:** —
+**Docs:** `.claude/board/IDEAS.md`
+
+---
+
+### #295 — docs(probe-queue): followup — release assets ARE available for P2/P3/P4 (merged 2026-04-29) — REVERTED by #299
+
+**Confidence (2026-05-05):** Retrofitted from PR description — REVERTED by PR #299. Content removed from main.
+
+**Added:** `bf16-hhtl-terrain.md` updated with concrete download/probe sequence using release assets; P2/P3/P4 status changed from "needs production data" to "data available".
+**Locked:** —
+**Deferred:** —
+**Docs:** `.claude/knowledge/bf16-hhtl-terrain.md`
+
+---
+
+### #294 — docs(probe-queue): assess P2/P3/P4 routing — honest "needs production data" (merged 2026-04-29) — REVERTED by #299
+
+**Confidence (2026-05-05):** Retrofitted from PR description — REVERTED by PR #299. Content removed from main.
+
+**Added:** `bf16-hhtl-terrain.md` probe routing table: M1→bgz-tensor/CHAODA, P1→`jc` (PASS), P2-P4→bgz-tensor calibrate feature. `EPIPHANIES.md` FINDING.
+**Locked:** —
+**Deferred:** —
+**Docs:** `.claude/knowledge/bf16-hhtl-terrain.md`, `.claude/board/EPIPHANIES.md`
+
+---
+
+### #293 — jc: drain Probe P1 (γ-phase-offset ranking discrimination) → PASS (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `crates/jc/src/probe_p1_gamma_phase.rs` (~290 LOC, 11 tests)
+- `crates/jc/examples/probe_p1.rs`
+- `bf16-hhtl-terrain.md` P1 status updated: NOT RUN → PASS
+- `EPIPHANIES.md` FINDING; `IDEAS.md` triple-entry (Open status flipped + Implemented appended)
+**Locked:** P1 PASS confirms γ+φ pre-rank discrete selector VALID: min Spearman ρ = -0.963 (Dupain-Sós signature); three production crates (`bgz-tensor::gamma_phi`, `gamma_calibration`, `projection`) rest on this axiom.
+**Deferred:** P2/P3/P4 remain open (now re-routed per #299).
+**Docs:** `.claude/knowledge/bf16-hhtl-terrain.md`, `.claude/board/EPIPHANIES.md`, `.claude/board/IDEAS.md`
+
+---
+
+### #292 — docs(board): posthoc-correct PRs #290 #291 — re-file via canonical board mechanism (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- CONJECTURE banners added to `IDEA_JOURNAL_2026_04_29_STREAMING_HYDRATION.md` and `IDEA_JOURNAL_2026_04_29_FUTURE_PILLARS.md`
+- `IDEAS.md` 5 new Open entries: Safetensor-Streaming, Family-Bounds fractal, Pillar 7 (LIKELY-REDISCOVERY), Pillar 8 Adaptive Densification, Pillar 9 SH-Coefficients (TOUCHES PRODUCTION CODE)
+- `EPIPHANIES.md` 2 new entries: CORRECTION (board/probe-queue discipline skipped) + FINDING (Pillars 5+/5++/6 close concentration family)
+**Locked:** Pillar 7 LIKELY-REDISCOVERY — `bgz-tensor::cascade.rs` may already cover front-to-back α-blending; pre-implementation read mandatory. Pillar 9 TOUCHES PRODUCTION CODE — hold until explicit architecture decision.
+**Deferred:** —
+**Docs:** `.claude/board/IDEAS.md`, `.claude/board/EPIPHANIES.md`
+
+---
+
+### #291 — docs: idea journal — proposed application pillars 7/8/9 captured (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** `.claude/IDEA_JOURNAL_2026_04_29_FUTURE_PILLARS.md` (~270 LOC) — Pillars 7/8/9 with concrete PASS criteria, effort estimates, reuse inventory, sequencing options.
+**Locked:** —
+**Deferred:** —
+**Docs:** `.claude/IDEA_JOURNAL_2026_04_29_FUTURE_PILLARS.md`
+
+---
+
+### #290 — docs: idea journal — streaming-hydration + fractal-codec captured before dilution (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** `.claude/IDEA_JOURNAL_2026_04_29_STREAMING_HYDRATION.md` (~170 LOC) — Idea 1 (Safetensor streaming as n-dimensional meaning accumulation) and Idea 2 (family-bounds as global fractal coding), explicitly separated to prevent Ada Hammer-sucht-Nagel failure mode.
+**Locked:** —
+**Deferred:** —
+**Docs:** `.claude/IDEA_JOURNAL_2026_04_29_STREAMING_HYDRATION.md`
+
+---
+
+### #289 — jc: Pillar 6 — EWA-Sandwich Σ-push-forward (cant-stop-thinking math foundation) (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `crates/jc/src/ewa_sandwich.rs` (~440 LOC, 7 tests)
+- Pillar 6: `M·Σ·Mᵀ` sandwich preserves PSD by construction (10000/10000 hops); log-norm concentration tightness 1.467× KS log-normal-corrected bound
+**Locked:** Multi-hop path propagation `Σ_path = M_path · Σ_0 · M_pathᵀ` preserves SPD cone at any depth; bounded geometric multiplicative error (not O(n) arithmetic).
+**Deferred:** Pillar 7 (Front-to-Back α-Akkumulation), Pillar 8 (Adaptive Densification), Higher-dim SPD (3×3), real-stream CV-bound validation.
+**Docs:** —
+
+---
+
+### #288 — jc: Σ-Codebook Viability Probe — empirically rules out CausalEdge64 8→16 byte expansion (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `crates/jc/src/sigma_codebook_probe.rs` (~370 LOC, 6 tests)
+- `crates/jc/examples/sigma_probe.rs`
+- Result: R²=0.9949 at k=256 — CODEBOOK VIABLE; 8→16 byte CausalEdge64 expansion ruled out
+**Locked:** CausalEdge64 stays 8 bytes; HighHeelBGZ 240-edges/2KB hard limit preserved; Σ-Codebook Option A (3.5 KB workspace-wide + 1-byte sidecar) or Option C (SchemaSidecar Block 14/15).
+**Deferred:** `CausalEdgeTensor` design (caller choice: 9-byte sidecar or SchemaSidecar). Not a Pillar — diagnostic probe, separate category.
+**Docs:** —
+
+---
+
+### #287 — jc: Pillar 5++ — Düker-Zoubouloglou Hilbert-space CLT (closes the concentration family) (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `crates/jc/src/dueker_zoubouloglou.rs` (~280 LOC, 6 tests)
+- Pillar 5++: Breuer-Major Theorem 2.1 verified — bundle-of-N-fingerprints (AR(1) in ℝ^16384) converges to Gaussian limit in ℓ²; empirical trace 49101.2 vs predicted 49152.0 (0.103% error)
+**Locked:** Substrate fingerprint dimension d=16384 certified: bundle-of-N partial sums obey Hilbert-space CLT with explicit closed-form limit covariance; Düker-Zoubouloglou 2024 (arXiv:2405.11452).
+**Deferred:** Operator G ≠ identity (Hermite rank ≥ 2); Pillar 5++ Application Section 6 neural-operator CLT.
+**Docs:** —
+
+---
+
+### #286 — jc: Pillar 5+ — Köstenberger-Stark concentration on Hadamard 2×2 SPD (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `crates/jc/src/koestenberger.rs` (~370 LOC, 8 tests)
+- Pillar 5+: Theorem 1 (Köstenberger-Stark arXiv:2307.06057) verified — inductive mean on 2×2 SPD; measured 96.9% of predicted ceiling (tightness 0.969×)
+**Locked:** Foundation for `CausalEdgeTensor` Σ-aggregation on PSD manifold (non-iid, with Huber-ε contamination tolerance); certifies architecture BEFORE production edge code.
+**Deferred:** `CausalEdgeTensor` itself; `propagate()` in `holograph::resonance`; Pillar 5++ (Düker-Zoubouloglou).
+**Docs:** —
+
+---
+
+### #285 — Re-land #283 unlocks (Quantum, Disambiguator, verb_table, animal-farm harness) — orphaned by merge order (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- YAML robustness + `Instrument` variant + persistence + 144-cell verb taxonomy table
+- `Trajectory` audit-hash bridge + generalised `Disambiguator` trait + `PhaseTag`/`HolographicMode` (Quantum mode) + Animal Farm forward-validation harness
+- `verb_table`, `disambiguator`, `trajectory_audit`, `quantum_mode` modules wired; `u128::MAX as f32 → infinity` overflow fix
+**Locked:** —
+**Deferred:** —
+**Docs:** —
+
+---
+
+### #284 — Re-land #281 unlocks (PolicyRewriter, DomainProfile) — orphaned by merge order (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- Generalised `PolicyRewriter` trait + `ColumnMaskRewriter` (epiphany E1)
+- `DomainProfile` with HIPAA-grade thresholds + verb taxonomy seam (E5) + `Display` impl on `StepDomain`
+- `policy` module wired + `trajectory-audit` feature stub
+**Locked:** —
+**Deferred:** —
+**Docs:** —
+
+---
+
+### #282 — fix: Grammar/Markov hardening — slice unification, kernel wiring, parser tests, triangle distance (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- Slice coordinate unification: `markov_bundle.rs` imports from `role_keys` exclusively (canonical 2000/2000/2000/1500/1500, not equal-partition 3277)
+- Integration test `integration_role_alignment.rs` (8 tests — the slice alignment gate)
+- `rotate_right` post-bundle rotation removed (was corrupting role-slice alignment)
+- `coherence_at_with_kernel(i, kernel)` + `total_coherence_with_kernel(kernel)` wired
+- Bundle normalization (divide by `sum(|weights|)`)
+- NSM-prime ID set replaced heuristic with explicit `NSM_PRIME_IDS: HashSet`
+- `compute_classification_distance` normalized Hamming over qualia fingerprint (was 0.0 stub)
+- `role_candidates` parameterized with explicit `threshold` + `top_k`
+**Locked:** Subject/Predicate/Object/TEKAMOLO slice start:stop coordinates must come from `role_keys` canonical allocation; post-bundle rotation is forbidden.
+**Deferred:** ASCII→unicode restore on grammar-landscape.md; end-to-end coref test with ±5 trajectory.
+**Docs:** —
+
+---
+
+### #280 — fix: Foundry hardening — sealed RLS, VecDeque audit, URL decode, Plugin handshake (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `RegistryMode::Sealed` as default; unregistered TableScans return DataFusionError::Plan; fail-open requires explicit `RlsPolicyRegistry::fail_open("reason")`
+- `RlsContext::new` validates non-empty `tenant_id`/`actor_id`; `new_unchecked` preserved for system contexts
+- Audit ring: `Vec::remove(0)` → `VecDeque::pop_front()` (O(1))
+- FNV-1a hash replacing `DefaultHasher` (cross-build deterministic)
+- PostgREST `%XX`/`+` URL decoding in filter values/select/order
+- `GATE_DAMPING_FACTOR = 0.5` separates `gate_f` from `free_e`
+- `Acquire`/`Release` atomics on `current_scent` and `current_rationale_phase`
+- `Plugin` trait with `name()`, `depends_on()`, `seal()` for boot-time prerequisite verification
+- Table name validation rejects path traversal + non-alnum characters
+- `AuditEntry.rewritten_plan: Option<String>` for retroactive policy enforcement
+- 58 tests
+**Locked:** Sealed RLS registry is the default; deny-by-default contract from `foundry-roadmap.md`.
+**Deferred:** Integration test: sealed RLS + audit log captures rewritten plan.
+**Docs:** —
+
+---
+
+### #279 — feat: DeepNSM grammar parser — Markov ±5 bundler, role keys, thinking styles (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- D0: `grammar-landscape.md` knowledge doc (case inventories, Triangle overview, Markov ±5, 144 verb taxonomy, caveats)
+- D4: `ContextChain` reasoning ops (`coherence_at()`, `total_coherence()`, `replay_with_alternative()`, `disambiguate()`, `WeightingKernel` Uniform/MexicanHat/Gaussian with Ricker wavelet)
+- D6: `RoleKeySlice` with 13 SPO+TEKAMOLO const slices in 16384-dim VSA space, `LazyLock` arrays for Finnish cases/tenses/NARS inference keys, FNV-64a seeding
+- D7: `GrammarStyleConfig` + `GrammarStyleAwareness` with NARS revision lifecycle, `ParamKey`/`ParseOutcome`, zero-dep YAML reader, 12 starter YAML configs mapped to `ThinkingStyle` enum
+- D5: `MarkovBundler` with role-indexed VSA bundling (ring buffer, Mexican-hat weighting) + `Trajectory` struct
+- D2+D3: `ticket_emit` + `triangle_bridge`
+- New features: `contract-ticket`, `grammar-triangle`; 53-60 deepnsm tests
+**Locked:** 16384-dim VSA layout (not 10000 from spec) per LF-2 migration.
+**Deferred:** WeightingKernel::MexicanHat zero-crossing verification; end-to-end coref test; ASCII→unicode restore.
+**Docs:** `crates/deepnsm/`, `crates/lance-graph-contract/src/grammar/`
+
+---
+
+### #278 — feat: Foundry parity — RLS rewriter, audit log, PostgREST, with_registry (merged 2026-04-29)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- LF-3/DM-7: `RlsPolicyRegistry` as DataFusion `OptimizerRule` — tenant/actor predicate injection on every TableScan
+- LF-90: `AuditSink` trait + `InMemoryAuditSink` ring buffer with poison recovery
+- DM-8: PostgREST-shape handler stub — `parse_path()` + `EchoHandler` dispatcher (20 tests, no HTTP deps)
+- `LanceMembrane::with_registry()` builder
+- `StepDomain::Medcare` variant
+- `.claude/foundry-roadmap.md` + `.claude/medcare-foundry-vision.md` drafts
+- New features: `audit-log`, `postgrest`, `membrane-plugins-rls`, `membrane-plugins-audit`; 35 tests
+**Locked:** —
+**Deferred:** Manual review of RLS predicate injection on multi-table JOINs; PostgREST filter parsing edge cases (nested paths, unicode table names).
+**Docs:** `.claude/foundry-roadmap.md`, `.claude/medcare-foundry-vision.md`
+
+---
+
+### #277 — plan: unified Foundry roadmap for SMB + MedCare consumers (corrects PR #276 data-model framing) (merged 2026-04-28)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** `.claude/plans/foundry-roadmap-unified-v1.md` (~180 LOC) correcting #276's Binary16K-centric framing. Per-tenant scale (1k–50k entities) → SPO+ontology+Vsa16kF32 hot-path; Binary16K for OSINT-scale only; CAM-PQ at 1M+ aggregated rows.
+**Locked:** Data-model must use FormatBestPractices.md §5 scale decision matrix. LF-3/DM-7 RLS rewriter is critical path unblocking both consumers.
+**Deferred:** —
+**Docs:** `.claude/plans/foundry-roadmap-unified-v1.md`
+
+---
+
+### #276 — plan: Foundry Consumer Parity — shared ontology for SMB + MedCare + UNKNOWN resolutions (merged 2026-04-28)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source. Framing corrected by #277.
+
+**Added:** `.claude/plans/foundry-consumer-parity-v1.md` (186 LOC); resolved 5 callcenter UNKNOWNs: UNKNOWN-2 (Phoenix+Rust), UNKNOWN-3 (no pgwire), UNKNOWN-4 (actor_id=String/JWT sub), UNKNOWN-5 (single root Lance URI env var), §8 PostgREST (CONFIRMED, DM-8 unblocked).
+**Locked:** —
+**Deferred:** —
+**Docs:** `.claude/plans/foundry-consumer-parity-v1.md`
+
+---
+
+### #275 — feat: add lancedb 0.27.2 + pin lance =4.0.0 for exact version compat (merged 2026-04-28)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** `lancedb = "=0.27.2"` optional dep behind `lancedb-sdk` feature (NOT default); all lance crates pinned to `=4.0.0` exact (lancedb requires exact match).
+**Locked:** `lancedb-sdk` not in default features; `=4.0.0` exact pins required for lancedb compat.
+**Deferred:** Arrow 58 still blocked (lance 4.0.0 pins `arrow = "^57"`; needs lance 5+).
+**Docs:** —
+
+---
+
+### #274 — fix: F-01 identity-tear race + F-08 bounds check + F-09 poison recovery (merged 2026-04-27)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- F-01 CRITICAL: Single `RwLock<ActorState { role, faculty, expert }>` replacing 3 independent locks; identity triple always consistent
+- F-09 HIGH: All lock sites use `.unwrap_or_else(|e| e.into_inner())` — poison recovery
+- F-08 HIGH: `assert!(cursor < bs.len)` bounds check in `push_typed()` with overflow count
+**Locked:** —
+**Deferred:** F-10 (actor_id = expert as u64 semantic fix) — requires schema change to `ExternalIntent`; deferred to own commit with downstream coordination.
+**Docs:** —
+
+---
+
+### #273 — feat: bump lance 2→4 + datafusion 51→52 + deltalake 0.30→0.31 (merged 2026-04-27)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** lance 2.0.1→4.0.0, datafusion 51→52, deltalake 0.30→0.31 bumps across workspace; `NamespaceError::invalid_input()` 1-arg fix; `DeltaTableProvider::try_new(snapshot, log_store, scan_config)` migration. Arrow stays at 57.
+**Locked:** Arrow 58 blocked until lance 5+; `deltalake 0.32` needs arrow 58 (incompatible).
+**Deferred:** `auth-rls` xz2/liblzma collision re-test after merge.
+**Docs:** —
+
+---
+
+### #272 — feat: Column H — EntityTypeId on BindSpace (Phase 1 of 4) (merged 2026-04-27)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- `EntityTypeId = u16` type alias + `entity_type_id(ontology, name) → u16` function in `contract::ontology` (1-based, 0 = untyped)
+- `entity_type: Box<[u16]>` field on `BindSpace` SoA (+2 bytes/row)
+- `BindSpaceBuilder::push_typed()` writes entity_type; `push()` defaults to 0 (backward compat)
+- 4 tests (total 261 contract)
+**Locked:** 1-based indexing; 0 = untyped sentinel.
+**Deferred:** Dispatch-time type binding (Phase 2 — requires novel-pattern-detection logic D-E3); `entity_type_id()` O(N) scan (HashMap cache flagged as future optimization).
+**Docs:** —
+
+---
+
+### #271 — plan: BindSpace Columns E/F/G/H — 4→8 SoA integration plan (merged 2026-04-27)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:** `.claude/plans/bindspace-columns-v1.md` (457 LOC, 24 deliverables across 4 phases): Column H (`EntityTypeId u16`), E (`OntologyDelta 32B`), F (`AwarenessColumn [u8; 256]`), G (`ModelRef u32`). Total overhead +366 B/row (+5.9%), 26.2 MB total. Scientific cross-check: 7 SOUND / 7 CAUTION / 0 WRONG.
+**Locked:** Build order H→E→F→G has genuine dependency logic. Pearl rung gating (B2) embedded in struct layout.
+**Deferred:** Phase 3 (Column F) needs proof-of-concept before full 9-deliverable plan; Phase 4 (Column G) blocked on LF-50/52. No migration path for existing BindSpace consumers documented.
+**Docs:** `.claude/plans/bindspace-columns-v1.md`, `.claude/board/INTEGRATION_PLANS.md`
+
+---
+
+### #270 — ci: remove typos spell-check job (too many false positives) (merged 2026-04-26) [infra/format]
+
+Removes `crate-ci/typos` spell-check job from `style.yml`; `cargo fmt --check` remains. Spelling discipline moved to code-review.
+
+---
+
+### #269 — feat: Distance trait + SIMD Hamming/cosine wiring + PaletteDistanceTable + Dockerfile docs (merged 2026-04-26)
+
+**Confidence (2026-05-05):** Retrofitted from PR description — not re-verified against current source.
+
+**Added:**
+- SIMD Hamming: `cognitive-shader-driver/src/driver.rs:178` now calls `ndarray::hpc::bitwise::hamming_distance_raw()` (~8-16× speedup AVX-512 VPOPCNTDQ); DataFusion UDF + graph fingerprint Hamming delegated to ndarray
+- CI `RUSTFLAGS`: all 4 workflows get `-C target-cpu=x86-64-v3` (AVX2); Dockerfile gets same env var
+- `Dockerfile.md` (118 LOC): three-tier build strategy, SIMD dispatch, RUSTFLAGS vs `.cargo/config.toml` override behavior
+- `Distance` trait (`distance()`, `similarity()`, `similarity_z()`) + `fisher_z_inverse()` + `mean_similarity_fisher()`; scalar impls for `[u64; 256]`, `[u8; 6]`, `[u8; 3]`; 11 tests
+- SIMD cosine/dot in `vector_ops.rs` (4 scalar loops → `cosine_f32_to_f64_simd`/`dot_f64_simd`)
+- `bgz17 Palette::build_distance_table()` → 256×256 u16 table (128 KB, L2-resident); `edge_distance(a,b)` O(1)
+- `EPIPHANIES.md` Distance dispatch FINDING; `TECH_DEBT.md` TD-DIST-1/2/3 opened and marked PAID same session
+**Locked:** Type-intrinsic dispatch (`fp_a.distance(&fp_b)`) — no `dyn`, no enum match; FisherZ inverse for safe averaging across SoA columns.
+**Deferred:** —
+**Docs:** `Dockerfile.md`, `.claude/board/EPIPHANIES.md`, `.claude/board/TECH_DEBT.md`
+
