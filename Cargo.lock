@@ -4340,6 +4340,7 @@ name = "lance-graph-callcenter"
 version = "0.1.0"
 dependencies = [
  "arrow",
+ "async-trait",
  "axum",
  "datafusion",
  "futures",

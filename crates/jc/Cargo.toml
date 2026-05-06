@@ -17,3 +17,6 @@ name = "sigma_probe"
 
 [[example]]
 name = "probe_p1"
+
+[[example]]
+name = "osint_edge_traversal"
