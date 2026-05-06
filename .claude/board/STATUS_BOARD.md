@@ -281,6 +281,41 @@ pattern IS the Supabase-shape transcode approach).
 
 ---
 
+## grammar-foundry-followup-v1 — Wire stubs to existing tissue
+
+Plan: `.claude/plans/grammar-foundry-followup-v1.md`. Session 2026-04-29.
+Six explicit stubs in PRs #275-#283 + 1 keystone (LF-12 Pipeline DAG). 13 PRs total in 3 waves.
+
+### Wave 1 — no deps (parallel)
+
+| D-id | Title | Status | Notes |
+|---|---|---|---|
+| PR-S1 | LF-12 Pipeline DAG: `UnifiedStep.depends_on` + topological executor | **Queued** | Keystone. Unblocks F4, G2, G6 |
+| PR-F1 | PolicyRewriter UDF wrap: `RedactionMode` executors (closes `policy.rs:122`) | **Queued** | Unblocks F2, F5 |
+| PR-F3 | Audit log Lance-backed writer (closes `lib.rs:100`) | **Queued** | |
+| PR-F6 | `dn_path.rs` real scent via CAM-PQ (closes `dn_path.rs:53`) | **Queued** | Risk: bgz-tensor dep |
+| PR-G1 | Triangle bridge real Causality footprint (closes `triangle_bridge.rs:90,221`) | **Queued** | |
+| PR-G3 | ContextChain real `Binary16K` fingerprint (closes `context_chain.rs:345`) | **Queued** | |
+| PR-G4 | verb_table seed 10/12 families (closes empty `default_table()` rows) | **Queued** | |
+| PR-G5 | AriGraph episodic unbundle/rebundle (per `integration-plan-grammar-crystal-arigraph.md`) | **Queued** | |
+
+### Wave 2 — depends on Wave 1
+
+| D-id | Title | Status | Notes |
+|---|---|---|---|
+| PR-F2 | RowEncryption + DifferentialPrivacy executors (closes `policy.rs:147,181`) | **Queued** | After F1; needs key-mgmt ADR |
+| PR-F4 | PostgREST → DataFusion dispatch (closes `EchoHandler` stub) | **Queued** | After S1 |
+| PR-F5 | `audit_from_plan()` helper (closes `orchestration.rs:202` `unimplemented!`) | **Queued** | After F1 |
+| PR-G2 | Disambiguator wiring at parser boundary + FailureTicket emission | **Queued** | After S1 |
+
+### Wave 3 — depends on Waves 1+2
+
+| D-id | Title | Status | Notes |
+|---|---|---|---|
+| PR-G6 | Animal Farm harness real run (D10 from PR #243) | **Queued** | After G1+G2+G3; text licensing needed |
+
+---
+
 ## unified-integration-v1 — PersonaHub × ONNX × Archetype × MM-CoT × RoleDB
 
 Plan: `.claude/plans/unified-integration-v1.md`. Session 2026-04-23.

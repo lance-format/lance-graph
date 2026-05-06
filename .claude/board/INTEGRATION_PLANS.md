@@ -50,6 +50,22 @@
 
 ---
 
+## v1 — Grammar + Foundry Follow-up (authored 2026-04-29)
+
+**Author:** main thread (Opus 4.7), session 2026-04-29
+**Status:** Active
+**Scope:** Wire the stubs and scaffolds shipped in PRs #275-#283 to existing tissue. Six explicit `stub`/`skeleton`/`placeholder`/`unimplemented!` markers in the merged code (verified by grep) name what remains. 13 PRs across two parallel tracks (6 Foundry + 6 Grammar) sharing one keystone (LF-12 Pipeline DAG). All deliverables target `main` directly; no stacking PRs (avoids the merge-order orphaning that bit #281/#283 → #284/#285).
+**Path:** `.claude/plans/grammar-foundry-followup-v1.md`
+**Deliverables:** PR-S1 (Pipeline DAG keystone), PR-F1..F6 (Foundry: PolicyRewriter UDF wrap, Encrypt+DP, Lance audit, PostgREST dispatch, audit_from_plan, dn_path scent), PR-G1..G6 (Grammar: Triangle causality, Disambiguator wiring, ContextChain fp, verb_table seed, AriGraph unbundle, Animal Farm real run).
+**Cross-refs:**
+- `lf-integration-mapping-v1.md` — LF-12 keystone rationale (PR-S1)
+- `foundry-roadmap.md` — original PR-1..PR-5 (PR-1/PR-2 shipped as #278/#280; PR-3..PR-5 ship as PR-F1..F4 here)
+- `integration-plan-grammar-crystal-arigraph.md` — original AriGraph follow-up (now ships as PR-G5)
+- `grammar-landscape.md` — case inventories that PR-G4 consumes
+**Open decisions:** (1) PR-F2 encryption key management (KMS? in-process? user-supplied?); (2) PR-G6 Animal Farm text licensing; (3) PR-F6 bgz-tensor → callcenter dep; (4) PR-G4 ownership.
+
+---
+
 ## v1 — LF Integration Mapping (authored 2026-04-25)
 
 **Author:** main thread (Opus 4.7 1M), session 2026-04-25 (branch claude/scenario-world-facade)
