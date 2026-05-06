@@ -201,13 +201,14 @@ fn main() {
     println!();
 
     let edges = [
-        OsintEdge { from: "Lavender", to: "IDF",     confidence: 0.85, skew: 0.10 },
-        OsintEdge { from: "IDF",      to: "Israel",  confidence: 0.95, skew: 0.05 },
-        OsintEdge { from: "Israel",   to: "NSO",     confidence: 0.70, skew: 0.20 },
-        OsintEdge { from: "NSO",      to: "Pegasus", confidence: 0.90, skew: 0.08 },
+        OsintEdge { from: "Lavender", to: "IDF",       confidence: 0.85, skew: 0.10 },
+        OsintEdge { from: "IDF",      to: "Israel",    confidence: 0.95, skew: 0.05 },
+        OsintEdge { from: "Israel",   to: "NSO",       confidence: 0.70, skew: 0.20 },
+        OsintEdge { from: "NSO",      to: "Pegasus",   confidence: 0.90, skew: 0.08 },
+        OsintEdge { from: "Pegasus",  to: "Khashoggi", confidence: 0.88, skew: 0.15 },
     ];
 
-    println!("Path  : Lavender → IDF → Israel → NSO → Pegasus  (5 entities, 4 edges)");
+    println!("Path  : Lavender → IDF → Israel → NSO → Pegasus → Khashoggi  (6 entities, 5 edges)");
     println!("Σ_0   : I  (no prior uncertainty)");
     println!();
     println!("──────────────────────────────────────────────────────────────────────");

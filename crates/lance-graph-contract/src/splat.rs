@@ -28,8 +28,9 @@
 /// (may promote ontology after NARS validation); `Forecast` and
 /// `Counterfactual` are scenario-only (must NOT promote facts).
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum SplatChannel {
+    #[default]
     Support = 0,
     Contradiction = 1,
     Forecast = 2,
@@ -97,14 +98,19 @@ impl AwarenessPlane16K {
         Self([0u64; 256])
     }
 
-    /// Deposit a single splat into this plane via XOR (single-writer, idempotent).
+    /// Deposit a single splat into this plane via OR (set-accumulate).
     /// Bit position derived from `splat.center_a` × 256 ⊕ `splat.center_b` mod 16384.
-    /// Amplitude/width control accumulation pattern (caller's responsibility for q8 lanes).
-    pub fn deposit_xor(&mut self, splat: &CamPlaneSplat) {
+    ///
+    /// OR (not XOR) is the correct multi-writer accumulation for pressure planes:
+    /// repeated evidence at the same CAM address strengthens the signal rather
+    /// than toggling it away. Removal is a separate `clear_bit()` operation
+    /// (not yet needed — pressure planes are write-once-per-epoch, then reset
+    /// via `AwarenessPlane16K::zero()`).
+    pub fn deposit(&mut self, splat: &CamPlaneSplat) {
         let bit = (((splat.center_a as u32) << 8) ^ splat.center_b as u32) % 16_384;
         let word = (bit / 64) as usize;
         let mask = 1u64 << (bit % 64);
-        self.0[word] ^= mask;
+        self.0[word] |= mask;
     }
 }
 
@@ -135,22 +141,14 @@ pub struct CamPlaneSplat {
     pub replay_ref: u64,
 }
 
-impl Default for SplatChannel {
-    fn default() -> Self {
-        Self::Support
-    }
-}
+// SplatChannel gets Default via derive + #[default] on Support variant above.
 
 impl CamPlaneSplat {
     /// Effective amplitude after gating by the theta_accept aperture.
     /// Returns 0 if amplitude clears the acceptance threshold (rejected),
     /// otherwise the surviving amplitude.
     pub fn effective_amplitude(&self) -> u8 {
-        if self.amplitude_q8 < self.theta_accept_q8 {
-            0
-        } else {
-            self.amplitude_q8 - self.theta_accept_q8
-        }
+        self.amplitude_q8.saturating_sub(self.theta_accept_q8)
     }
 
     pub fn is_evidence_bearing(&self) -> bool {
@@ -215,7 +213,7 @@ impl SplatPlaneSet {
         if splat.effective_amplitude() == 0 {
             return;
         }
-        self.plane_for(splat.channel).deposit_xor(splat);
+        self.plane_for(splat.channel).deposit(splat);
     }
 }
 
@@ -376,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn awareness_plane_deposit_xor_idempotent() {
+    fn awareness_plane_deposit_or_accumulates() {
         let mut plane = AwarenessPlane16K::default();
         let splat = CamPlaneSplat {
             center_a: 42,
@@ -387,15 +385,16 @@ mod tests {
         };
 
         // After one deposit, plane is non-zero.
-        plane.deposit_xor(&splat);
+        plane.deposit(&splat);
         let nonzero = plane.0.iter().any(|w| *w != 0);
         assert!(nonzero, "plane stayed zero after a deposit");
 
-        // After a second deposit of the same splat, XOR returns to zero.
-        plane.deposit_xor(&splat);
+        // After a second deposit of the same splat, OR keeps the bit set
+        // (repeated evidence accumulates — Codex P1 review finding).
+        plane.deposit(&splat);
         assert!(
-            plane.0.iter().all(|w| *w == 0),
-            "XOR property: depositing the same splat twice should clear the plane"
+            plane.0.iter().any(|w| *w != 0),
+            "OR property: depositing the same splat twice must keep pressure"
         );
     }
 
