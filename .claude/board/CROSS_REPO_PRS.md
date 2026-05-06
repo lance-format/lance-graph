@@ -28,6 +28,52 @@
 
 ---
 
+## MedCareV2 #8 — merged 2026-05-06
+
+**Repo:** `AdaWorldAPI/MedCareV2` (C# .NET Framework 4.8 desktop)
+**MCP scope:** out-of-scope; diff not fetched.
+**Topology layer:** L3 caller-side (separate process from medcare-rs Rust binary)
+
+**Topology placement.** Same shape as MedCareV2 #7 below — Windows
+.NET 4.8 desktop probe calling Rust-side serving endpoints over
+HTTP. PR #8 is the next follow-up in the LanceProbe arc (#4 → #5 →
+R2-R6 → #7 → #8).
+
+**Sequence in context.**
+- Earlier MedCareV2 PRs established the LanceProbe ring scaffolding
+  (#4 + #5 + R2-R6 follow-ups).
+- PR #7 (this same day) advanced the probe; entry below.
+- **PR #8** lands on the same day — likely a tight follow-up
+  resolving an item flagged in #7 review or extending the ring's
+  coverage. Without the diff, the specific delta is unknown.
+
+**What's likely** (inferred from the cadence; verify on paste):
+- Either a defect fix flagged in PR #7 review, OR
+- An extension of the parity-ring coverage to additional
+  endpoints / additional R2-R6 consumer-mirror rows, OR
+- An ergonomic improvement to the C# probe's diff-or-401-or-404
+  reporting
+
+**Entropy-ledger row anchor.** Same as #7 — MEDCARE-PARITY-1 (the
+parity ring between C# probe and Rust binary). Two same-day PRs
+on this row indicates active iteration; the row's eventual SHIPPED
+state will likely cite the latest of the cluster (#8) rather than
+#7.
+
+**Confidence (2026-05-06):** Cannot verify — out of MCP scope.
+Citation here is for traceability; promote to FINDING when the
+diff is paste-shared or the allowlist is extended. Two same-day
+MedCareV2 PRs (#7 + #8) are tracked separately to preserve the
+arc; do not collapse into one entry post-hoc.
+
+**Cross-refs:**
+- `MedCareV2 #7` (entry below) — companion same-day PR
+- `SINGLE_BINARY_TOPOLOGY.md` Layer 3 § "External probes" entry
+- `foundry-consumer-parity-v1.md` (parity-clean window discussion)
+- `medcare-rs/routes/parity.rs:46` (Rust-side ingest endpoint)
+
+---
+
 ## MedCareV2 #7 — merged 2026-05-06
 
 **Repo:** `AdaWorldAPI/MedCareV2` (C# .NET Framework 4.8 desktop)
@@ -69,6 +115,7 @@ Citation here is for traceability; promote to FINDING when the
 diff is paste-shared or the allowlist is extended.
 
 **Cross-refs:**
+- `MedCareV2 #8` (entry above) — companion same-day PR
 - `SINGLE_BINARY_TOPOLOGY.md` Layer 3 § "External probes" entry
 - `foundry-consumer-parity-v1.md` (parity-clean window discussion)
 - `medcare-rs/routes/parity.rs:46` (Rust-side ingest endpoint)
