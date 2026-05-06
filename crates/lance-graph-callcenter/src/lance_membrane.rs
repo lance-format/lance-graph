@@ -21,8 +21,8 @@
 //!   Subscription is a disconnected `mpsc::Receiver<u64>`.
 //! - Phase B: `dialect` field populated by polyglot front-end parsers.
 //! - Phase C: `scent` replaced by full ZeckBF17→Base17→CAM-PQ cascade.
-//! - Phase D: Subscription wired to `tokio::sync::watch` on Lance version
-//!   counter; `CommitFilter` applied per-subscriber.
+//! - Phase D: Subscription wired to the std-sync `WatchReceiver` over
+//!   the Lance version counter; `CommitFilter` applied per-subscriber.
 //!
 //! # UNKNOWN-1 resolution
 //!
@@ -69,10 +69,7 @@ const GATE_DAMPING_FACTOR: f32 = 0.5;
 use std::sync::mpsc;
 
 #[cfg(feature = "realtime")]
-use tokio::sync::watch;
-
-#[cfg(feature = "realtime")]
-use crate::version_watcher::LanceVersionWatcher;
+use crate::version_watcher::{LanceVersionWatcher, WatchReceiver};
 
 use std::sync::Arc;
 
@@ -339,13 +336,14 @@ impl ExternalMembrane for LanceMembrane {
 
     /// Subscription handle for projected cognitive events.
     ///
-    /// With `[realtime]` feature: a `tokio::sync::watch::Receiver<CognitiveEventRow>`
-    /// wired to `LanceVersionWatcher` — always-latest semantics, supabase-shape.
+    /// With `[realtime]` feature: a `WatchReceiver` over the in-process
+    /// `LanceVersionWatcher` — always-latest semantics, supabase-shape,
+    /// std-only sync primitives (no tokio per topology I-2).
     /// Without `[realtime]`: a disconnected `mpsc::Receiver<u64>` stub (Phase A).
     #[cfg(not(feature = "realtime"))]
     type Subscription = mpsc::Receiver<u64>;
     #[cfg(feature = "realtime")]
-    type Subscription = watch::Receiver<CognitiveEventRow>;
+    type Subscription = WatchReceiver;
 
     /// Project a committed ShaderBus cycle to a scalar row.
     ///
@@ -471,8 +469,9 @@ impl ExternalMembrane for LanceMembrane {
 
     /// Subscribe to projected commits matching the filter.
     ///
-    /// With `[realtime]`: returns a `watch::Receiver<CognitiveEventRow>` seeded
-    /// with the latest committed row.  Always-latest semantics (supabase-shape).
+    /// With `[realtime]`: returns a `WatchReceiver` seeded with the latest
+    /// committed row.  Always-latest semantics (supabase-shape), std-only
+    /// sync primitives.
     /// Without `[realtime]`: returns a disconnected `mpsc::Receiver<u64>` stub.
     #[cfg(not(feature = "realtime"))]
     fn subscribe(&self, _filter: CommitFilter) -> mpsc::Receiver<u64> {
@@ -481,7 +480,7 @@ impl ExternalMembrane for LanceMembrane {
     }
 
     #[cfg(feature = "realtime")]
-    fn subscribe(&self, _filter: CommitFilter) -> watch::Receiver<CognitiveEventRow> {
+    fn subscribe(&self, _filter: CommitFilter) -> WatchReceiver {
         self.watcher.subscribe()
     }
 }
@@ -627,7 +626,9 @@ mod tests {
         // Free_e=10 ≤ max=100 ✓; style=5 == 5 ✓ → fan-out passes.
     }
 
-    /// Phase D (realtime feature): subscribe() → project() → rx.borrow() sees the row.
+    /// Phase D (realtime feature): subscribe() → project() → rx.current() sees the row.
+    /// Migrated from tokio::sync::watch::Receiver to the std-sync WatchReceiver
+    /// API per topology I-2 (tokio outbound only).
     #[cfg(feature = "realtime")]
     #[test]
     fn subscribe_receives_on_project() {
@@ -642,8 +643,9 @@ mod tests {
         let meta = MetaWord::new(7, 3, 200, 150, 10);
         m.project(&bus, meta);
 
-        // The watcher should have delivered the row
-        let snapshot = rx.borrow();
+        // current() reads the always-latest snapshot (Arc<CognitiveEventRow>);
+        // after project() bumped the watcher, it reflects the new row.
+        let snapshot = rx.current();
         assert_eq!(
             snapshot.thinking, 7,
             "subscriber should see the projected row"
