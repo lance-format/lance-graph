@@ -13,6 +13,8 @@ try:  # Prefer to import for typing without raising at runtime.
 except ImportError:  # pragma: no cover - builder is available in normal installs.
     GraphConfigBuilder = object  # type: ignore[assignment]
 
+from lance_graph import DistanceMetric, VectorSearch
+
 from .component import KnowledgeGraphComponent
 from .config import KnowledgeGraphConfig, build_graph_config_from_mapping
 from .extraction import (
@@ -65,6 +67,23 @@ class KnowledgeGraph:
                 {name: _ensure_table(name, table) for name, table in datasets.items()}
             )
         return query.execute(sources)
+
+    def run_with_vector_rerank(
+        self,
+        statement: str,
+        vector_search: "VectorSearch",
+        *,
+        datasets: Optional[TableMapping] = None,
+    ) -> pa.Table:
+        """Execute a Cypher statement and rerank results by vector similarity."""
+
+        query = CypherQuery(statement).with_config(self.config)
+        sources: Dict[str, pa.Table] = dict(self._tables)
+        if datasets:
+            sources.update(
+                {name: _ensure_table(name, table) for name, table in datasets.items()}
+            )
+        return query.execute_with_vector_rerank(sources, vector_search)
 
     def tables(self) -> Dict[str, pa.Table]:
         """Return a shallow copy of the registered datasets."""
@@ -129,4 +148,6 @@ __all__ = [
     "preview_extraction",
     "HeuristicExtractor",
     "LLMExtractor",
+    "VectorSearch",
+    "DistanceMetric",
 ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterable, Mapping, MutableMapping, Optional
 
-from lance_graph import CypherQuery, GraphConfig
+from lance_graph import CypherQuery, DistanceMetric, GraphConfig, VectorSearch
 
 from .config import KnowledgeGraphConfig, build_default_graph_config
 from .store import LanceGraphStore
@@ -140,6 +140,89 @@ class LanceKnowledgeGraph:
     ) -> "pa.Table":
         """Alias for :meth:`run` to match the semantic service naming."""
         return self.run(statement, datasets=datasets)
+
+    def run_with_vector_rerank(
+        self,
+        statement: str,
+        vector_search: "VectorSearch",
+        *,
+        datasets: Optional[Mapping[str, "pa.Table"]] = None,
+    ) -> "pa.Table":
+        """Execute a Cypher statement and rerank results by vector similarity.
+
+        Parameters
+        ----------
+        statement:
+            Cypher query string.
+        vector_search:
+            A configured ``VectorSearch`` instance (column, vector, metric, top_k).
+        datasets:
+            Optional override tables injected on top of persisted datasets.
+        """
+        query = CypherQuery(statement).with_config(self._config)
+
+        referenced_tables = set(query.node_labels()) | set(query.relationship_types())
+        base_tables: MutableMapping[str, "pa.Table"] = dict(
+            self._store.load_tables(referenced_tables)
+        )
+        if datasets:
+            base_tables.update(datasets)
+        return query.execute_with_vector_rerank(base_tables, vector_search)
+
+    def query_by_text(
+        self,
+        statement: str,
+        query_text: str,
+        column: str,
+        *,
+        top_k: int = 10,
+        metric: str = "cosine",
+        include_distance: bool = True,
+        embedding_model: str = "text-embedding-3-small",
+        datasets: Optional[Mapping[str, "pa.Table"]] = None,
+    ) -> "pa.Table":
+        """Convenience method: embed ``query_text`` then call run_with_vector_rerank.
+
+        Parameters
+        ----------
+        statement:
+            Cypher query string.
+        query_text:
+            Natural-language text to embed as the query vector.
+        column:
+            Name of the vector column in the dataset.
+        top_k:
+            Number of nearest neighbours to return.
+        metric:
+            Distance metric: "cosine", "l2", or "dot".
+        include_distance:
+            Whether to include the ``_distance`` column in results.
+        embedding_model:
+            OpenAI embedding model name.
+        datasets:
+            Optional override tables.
+        """
+        from .embeddings import EmbeddingGenerator
+
+        _metric_map = {
+            "cosine": DistanceMetric.Cosine,
+            "l2": DistanceMetric.L2,
+            "dot": DistanceMetric.Dot,
+        }
+        rust_metric = _metric_map.get(metric.lower(), DistanceMetric.Cosine)
+
+        vector = EmbeddingGenerator(model=embedding_model).embed_one(query_text)
+        if vector is None:
+            raise RuntimeError(f"Failed to generate embedding for text: {query_text!r}")
+
+        vs = (
+            VectorSearch(column)
+            .query_vector(vector)
+            .metric(rust_metric)
+            .top_k(top_k)
+            .include_distance(include_distance)
+        )
+        return self.run_with_vector_rerank(statement, vs, datasets=datasets)
 
 
 def create_default_service(
