@@ -38,6 +38,7 @@
 pub mod ast;
 pub mod case_insensitive;
 pub mod config;
+pub mod csr_index;
 pub mod datafusion_planner;
 pub mod error;
 pub mod lance_native_planner;
@@ -56,6 +57,7 @@ pub mod table_readers;
 pub const MAX_VARIABLE_LENGTH_HOPS: u32 = 20;
 
 pub use config::{GraphConfig, NodeMapping, RelationshipMapping};
+pub use csr_index::{build_bidirectional_index, CsrIndex, CsrIndexBuilder};
 pub use error::{GraphError, Result};
 pub use lance_graph_catalog::{
     DirNamespace, GraphSourceCatalog, InMemoryCatalog, SimpleTableSource,
