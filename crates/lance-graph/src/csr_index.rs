@@ -617,10 +617,7 @@ mod tests {
 
     #[test]
     fn test_auto_inferred_num_vertices() {
-        let idx = CsrIndexBuilder::new()
-            .add_edge(0, 5)
-            .add_edge(3, 7)
-            .build();
+        let idx = CsrIndexBuilder::new().add_edge(0, 5).add_edge(3, 7).build();
 
         // Should infer num_vertices = 8 (max ID 7 + 1)
         assert_eq!(idx.num_vertices(), 8);
