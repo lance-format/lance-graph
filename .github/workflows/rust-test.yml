@@ -73,8 +73,10 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run tests with coverage
+        env:
+          CARGO_BUILD_JOBS: "2"
         run: |
-          cargo llvm-cov --manifest-path crates/lance-graph/Cargo.toml --lcov --output-path lcov.info
+          cargo llvm-cov --manifest-path crates/lance-graph/Cargo.toml --lib --lcov --output-path lcov.info
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
