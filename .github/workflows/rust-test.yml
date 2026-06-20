@@ -48,6 +48,8 @@ jobs:
         run: cargo test --manifest-path crates/lance-graph/Cargo.toml --no-run
       - name: Run unit tests
         run: cargo test --manifest-path crates/lance-graph/Cargo.toml --lib
+      - name: Run integration tests
+        run: cargo test --manifest-path crates/lance-graph/Cargo.toml --tests
       - name: Run doc tests
         run: cargo test --manifest-path crates/lance-graph/Cargo.toml --doc
 
