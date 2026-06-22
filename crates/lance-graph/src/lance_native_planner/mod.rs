@@ -9,6 +9,7 @@
 
 mod direction;
 mod csr_expand;
+mod take;
 
 pub use direction::NativeDirection;
 
