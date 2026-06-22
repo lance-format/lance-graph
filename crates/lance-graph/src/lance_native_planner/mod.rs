@@ -8,6 +8,7 @@
 //! crate compiles between tasks.
 
 mod direction;
+mod csr_expand;
 
 pub use direction::NativeDirection;
 
