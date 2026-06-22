@@ -10,8 +10,10 @@
 mod direction;
 mod csr_expand;
 mod take;
+mod extension_planner;
 
 pub use direction::NativeDirection;
+pub use extension_planner::CsrQueryPlanner;
 
 use crate::config::GraphConfig;
 use crate::datafusion_planner::GraphPhysicalPlanner;
