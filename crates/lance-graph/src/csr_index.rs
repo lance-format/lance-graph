@@ -236,7 +236,8 @@ impl CsrIndexBuilder {
         self
     }
 
-    /// Add edges from an Arrow RecordBatch with `src_id` and `dst_id` columns.
+    /// Add edges from an Arrow RecordBatch. Expects columns named `src_id` and
+    /// `dst_id`; use [`add_edges_from_batch_with_columns`] for other names.
     pub fn add_edges_from_batch(self, batch: &RecordBatch) -> Result<Self> {
         self.add_edges_from_batch_with_columns(batch, "src_id", "dst_id")
     }
@@ -693,5 +694,43 @@ mod tests {
             .build();
         assert_eq!(rev.neighbors(2), &[0, 1]);
         assert_eq!(rev.neighbors(1), &[0]);
+        assert_eq!(rev.neighbors(0), &[] as &[u64]);
+    }
+
+    #[test]
+    fn test_add_edges_from_batch_with_columns_errors() {
+        // Missing column name -> error
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("src_person_id", DataType::UInt64, false),
+            Field::new("dst_person_id", DataType::UInt64, false),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(UInt64Array::from(vec![0u64])),
+                Arc::new(UInt64Array::from(vec![1u64])),
+            ],
+        )
+        .unwrap();
+        assert!(CsrIndexBuilder::new()
+            .add_edges_from_batch_with_columns(&batch, "missing", "dst_person_id")
+            .is_err());
+
+        // Wrong column type (Int64 instead of UInt64) -> error
+        let schema2 = Arc::new(Schema::new(vec![
+            Field::new("src_person_id", DataType::Int64, false),
+            Field::new("dst_person_id", DataType::UInt64, false),
+        ]));
+        let batch2 = RecordBatch::try_new(
+            schema2,
+            vec![
+                Arc::new(arrow_array::Int64Array::from(vec![0i64])),
+                Arc::new(UInt64Array::from(vec![1u64])),
+            ],
+        )
+        .unwrap();
+        assert!(CsrIndexBuilder::new()
+            .add_edges_from_batch_with_columns(&batch2, "src_person_id", "dst_person_id")
+            .is_err());
     }
 }
