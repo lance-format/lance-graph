@@ -17,14 +17,14 @@
 pub mod analysis;
 mod builder;
 mod config_helpers;
-mod expression;
+pub(crate) mod expression;
 mod join_ops;
 mod scan_ops;
 mod udf;
 pub mod vector_ops;
 
 #[cfg(test)]
-mod test_fixtures;
+pub(crate) mod test_fixtures;
 
 // Re-export public types
 pub use analysis::{PlanningContext, QueryAnalysis, RelationshipInstance};
@@ -60,6 +60,11 @@ impl DataFusionPlanner {
             config,
             catalog: Some(catalog),
         }
+    }
+
+    /// Access the catalog, if any (used by the native planner).
+    pub(crate) fn catalog_ref(&self) -> Option<&Arc<dyn GraphSourceCatalog>> {
+        self.catalog.as_ref()
     }
 
     /// Helper to convert DataFusion builder errors into GraphError::PlanError with context
