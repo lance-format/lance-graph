@@ -54,7 +54,8 @@ jobs:
           source .venv/bin/activate
           uv pip install maturin[patchelf]
           # Install test dependencies only (skip editable install to avoid double-building Rust)
-          uv pip install pytest pyarrow pandas ruff
+          # Match test-data writers to the Rust Lance 1.x reader.
+          uv pip install pytest pyarrow pandas ruff "pylance>=1.0.0,<2"
       - name: Build Python extension
         working-directory: python
         run: |

@@ -15,6 +15,26 @@ Lance Graph combines a Rust-powered Cypher query engine with Python APIs for:
 pip install lance-graph
 ```
 
+The Python release workflow builds Linux x86-64 and native Apple Silicon wheels.
+Installing a version with a wheel for your platform does not require Rust:
+
+```bash
+pip install --only-binary=:all: lance-graph
+```
+
+The binary-only option fails if that version has no compatible wheel, rather than
+compiling during installation. Earlier releases may not include the Apple Silicon
+wheel; check the selected release's files on PyPI. Rust and maturin are needed
+only when building from source.
+
+Release-workflow pull requests and manual `dry_run` builds produce downloadable
+workflow artifacts without publishing. Release runs publish the Linux distributions
+and the tested Apple Silicon wheel together after both builds succeed. The macOS wheel is tested
+in clean Python 3.11 and 3.12 environments with Rust absent from PATH, using actual
+in-memory and disk-backed Cypher traversal and SQL execution from the installed
+extension. CI uses a Lance 1.x test-data writer to match the embedded Rust reader;
+this test constraint does not change the package runtime requirements.
+
 ## Quick Start
 
 ### 1. Simple Cypher Query

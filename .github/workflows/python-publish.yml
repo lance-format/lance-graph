@@ -7,6 +7,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/python-publish.yml
+      - ci/check_wheel.py
   workflow_dispatch:
     inputs:
       mode:
@@ -18,12 +19,13 @@ on:
           - dry_run
           - release
 
+permissions:
+  contents: read
+
 jobs:
-  publish:
+  build-linux:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
+    timeout-minutes: 60
     env:
       CARGO_TERM_COLOR: always
       RUSTFLAGS: "-C debuginfo=1"
@@ -64,13 +66,83 @@ jobs:
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
-          name: python-dist
+          name: python-dist-linux
           path: python/dist
+          if-no-files-found: error
+
+  build-macos:
+    # Same native Apple Silicon runner used by pylance.
+    runs-on: warp-macos-14-arm64-6x
+    timeout-minutes: 60
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install system dependencies
+        run: brew install protobuf
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build Apple Silicon wheel
+        # Match pylance's native macOS build action.
+        uses: PyO3/maturin-action@04ac600d27cdf7a9a280dadf7147097c42b757ad # v1
+        with:
+          command: build
+          rust-toolchain: stable
+          args: --release --strip --target aarch64-apple-darwin --interpreter python --out dist
+          working-directory: python
+
+      - name: Test installed wheel without Rust
+        shell: bash
+        run: |
+          # Match the test-data writer to the Rust reader; constrain CI only.
+          UV_BIN="$(command -v uv)"
+          for version in 3.11 3.12; do
+            environment="$RUNNER_TEMP/wheel-test-$version"
+            "$UV_BIN" venv --python "$version" "$environment"
+            PATH="$environment/bin:/usr/bin:/bin" "$UV_BIN" pip install \
+              --python "$environment/bin/python" --only-binary=:all: \
+              python/dist/*.whl "pylance>=1.0.0,<2"
+            PATH="$environment/bin:/usr/bin:/bin" "$environment/bin/python" \
+              -I ci/check_wheel.py
+          done
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist-macos-aarch64
+          path: python/dist/*.whl
+          if-no-files-found: error
+
+  publish:
+    needs: [build-linux, build-macos]
+    if: >
+      (github.event_name == 'release' && github.event.action == 'released') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'release')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          pattern: python-dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
 
       - name: Publish to PyPI
-        if: >
-          (github.event_name == 'release' && github.event.action == 'released') ||
-          (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'release')
-        working-directory: python
-        run: |
-          uv publish --trusted-publishing always
+        run: uv publish --trusted-publishing always
