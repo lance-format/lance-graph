@@ -491,9 +491,67 @@ fn basic_value_expression(input: &str) -> IResult<&str, ValueExpression> {
     ))(input)
 }
 
-// Parse a value expression
-// Optimization: Use peek to avoid expensive backtracking for non-vector queries
+// Parse a value expression: `+` and `-` bind looser than `*`, `/` and `%`, and all of them are
+// left-associative.
 fn value_expression(input: &str) -> IResult<&str, ValueExpression> {
+    let (mut input, mut left) = multiplicative_expression(input)?;
+    while let Ok((rest, (_, op, _, right))) = tuple((
+        multispace0,
+        one_of("+-"),
+        multispace0,
+        multiplicative_expression,
+    ))(input)
+    {
+        let operator = match op {
+            '+' => ArithmeticOperator::Add,
+            _ => ArithmeticOperator::Subtract,
+        };
+        left = ValueExpression::Arithmetic {
+            left: Box::new(left),
+            operator,
+            right: Box::new(right),
+        };
+        input = rest;
+    }
+    Ok((input, left))
+}
+
+fn multiplicative_expression(input: &str) -> IResult<&str, ValueExpression> {
+    let (mut input, mut left) = primary_value_expression(input)?;
+    while let Ok((rest, (_, op, _, right))) = tuple((
+        multispace0,
+        one_of("*/%"),
+        multispace0,
+        primary_value_expression,
+    ))(input)
+    {
+        let operator = match op {
+            '*' => ArithmeticOperator::Multiply,
+            '/' => ArithmeticOperator::Divide,
+            _ => ArithmeticOperator::Modulo,
+        };
+        left = ValueExpression::Arithmetic {
+            left: Box::new(left),
+            operator,
+            right: Box::new(right),
+        };
+        input = rest;
+    }
+    Ok((input, left))
+}
+
+// Parse an operand of an arithmetic expression
+// Optimization: Use peek to avoid expensive backtracking for non-vector queries
+fn primary_value_expression(input: &str) -> IResult<&str, ValueExpression> {
+    if let Ok(result) = delimited(
+        tuple((char('('), multispace0)),
+        value_expression,
+        tuple((multispace0, char(')'))),
+    )(input)
+    {
+        return Ok(result);
+    }
+
     // Peek at first identifier to dispatch to correct parser
     // This eliminates failed parser attempts for every non-vector expression
     if let Ok((_, first_ident)) = peek(identifier)(input) {
@@ -1275,6 +1333,118 @@ mod tests {
         assert_eq!(result.skip, Some(5));
         assert_eq!(result.limit, Some(10));
         assert!(result.order_by.is_some());
+    }
+
+    fn return_expression(query: &str) -> ValueExpression {
+        let query = parse_cypher_query(query).unwrap();
+        query.return_clause.items[0].expression.clone()
+    }
+
+    fn arith(
+        left: ValueExpression,
+        operator: ArithmeticOperator,
+        right: ValueExpression,
+    ) -> ValueExpression {
+        ValueExpression::Arithmetic {
+            left: Box::new(left),
+            operator,
+            right: Box::new(right),
+        }
+    }
+
+    fn int(value: i64) -> ValueExpression {
+        ValueExpression::Literal(PropertyValue::Integer(value))
+    }
+
+    #[test]
+    fn test_parse_arithmetic_precedence() {
+        // `*` binds tighter than `+`: 1 + (2 * 3)
+        assert_eq!(
+            return_expression("MATCH (n:Person) RETURN 1 + 2 * 3"),
+            arith(
+                int(1),
+                ArithmeticOperator::Add,
+                arith(int(2), ArithmeticOperator::Multiply, int(3))
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_arithmetic_left_associative() {
+        // (10 - 4) - 3, and (8 / 2) % 3
+        assert_eq!(
+            return_expression("MATCH (n:Person) RETURN 10 - 4 - 3"),
+            arith(
+                arith(int(10), ArithmeticOperator::Subtract, int(4)),
+                ArithmeticOperator::Subtract,
+                int(3)
+            )
+        );
+        assert_eq!(
+            return_expression("MATCH (n:Person) RETURN 8 / 2 % 3"),
+            arith(
+                arith(int(8), ArithmeticOperator::Divide, int(2)),
+                ArithmeticOperator::Modulo,
+                int(3)
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_arithmetic_parentheses_and_properties() {
+        let age = ValueExpression::Property(PropertyRef {
+            variable: "n".to_string(),
+            property: "age".to_string(),
+        });
+        assert_eq!(
+            return_expression("MATCH (n:Person) RETURN (n.age + 1) * 2"),
+            arith(
+                arith(age.clone(), ArithmeticOperator::Add, int(1)),
+                ArithmeticOperator::Multiply,
+                int(2)
+            )
+        );
+        // Without spaces, `-1` is still a subtraction of the literal 1
+        assert_eq!(
+            return_expression("MATCH (n:Person) RETURN n.age-1"),
+            arith(age, ArithmeticOperator::Subtract, int(1))
+        );
+    }
+
+    #[test]
+    fn test_parse_arithmetic_in_where_comparison() {
+        let query =
+            parse_cypher_query("MATCH (n:Person) WHERE n.age + 1 > 30 RETURN n.name").unwrap();
+        let where_clause = query.where_clause.unwrap();
+        match where_clause.expression {
+            BooleanExpression::Comparison {
+                left,
+                operator,
+                right,
+            } => {
+                assert!(matches!(
+                    left,
+                    ValueExpression::Arithmetic {
+                        operator: ArithmeticOperator::Add,
+                        ..
+                    }
+                ));
+                assert_eq!(operator, ComparisonOperator::GreaterThan);
+                assert_eq!(right, int(30));
+            }
+            other => panic!("expected a comparison, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_count_star_still_parses_with_arithmetic() {
+        assert!(matches!(
+            return_expression("MATCH (n:Person) RETURN count(*) * 2"),
+            ValueExpression::Arithmetic {
+                operator: ArithmeticOperator::Multiply,
+                ..
+            }
+        ));
     }
 
     #[test]
