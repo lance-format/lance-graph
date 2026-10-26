@@ -388,17 +388,29 @@ impl<'a> LogicalPlanner<'a> {
         base: Option<LogicalOperator>,
         path: &PathPattern,
     ) -> Result<LogicalOperator> {
-        // Establish a base plan
-        let mut plan = if let Some(p) = base {
-            p
-        } else {
-            self.plan_node_scan(&path.start_node)?
-        };
-
-        // Determine the current source variable for the first hop
-        let mut current_src = match &path.start_node.variable {
-            Some(var) => var.clone(),
-            None => self.extract_variable_from_plan(&plan)?,
+        // Establish a base plan. A path that starts at a variable bound by an earlier
+        // pattern continues from the plan so far; any other start node is a new node
+        // that must be scanned, then joined with the plan so far.
+        let start_bound = path
+            .start_node
+            .variable
+            .as_deref()
+            .is_some_and(|v| self.variables.contains_key(v));
+        let (mut plan, mut current_src) = match base {
+            Some(p) if start_bound => (p, path.start_node.variable.clone().unwrap()),
+            base => {
+                let scan = self.plan_node_scan(&path.start_node)?;
+                let start_variable = self.extract_variable_from_plan(&scan)?;
+                let plan = match base {
+                    Some(p) => LogicalOperator::Join {
+                        left: Box::new(p),
+                        right: Box::new(scan),
+                        join_type: JoinType::Cross,
+                    },
+                    None => scan,
+                };
+                (plan, start_variable)
+            }
         };
 
         // Validate start node label consistency if variable already exists
