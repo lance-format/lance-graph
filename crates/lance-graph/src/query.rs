@@ -233,10 +233,7 @@ impl CypherQuery {
         let strategy = strategy.unwrap_or_default();
         match strategy {
             ExecutionStrategy::DataFusion => self.execute_datafusion(datasets).await,
-            ExecutionStrategy::LanceNative => Err(GraphError::UnsupportedFeature {
-                feature: "Lance native execution strategy is not yet implemented".to_string(),
-                location: snafu::Location::new(file!(), line!(), column!()),
-            }),
+            ExecutionStrategy::LanceNative => self.execute_lance_native(datasets).await,
         }
     }
 
@@ -328,7 +325,7 @@ impl CypherQuery {
 
         // Build catalog and context from datasets
         let (catalog, ctx) = self
-            .build_catalog_and_context_from_datasets(datasets)
+            .build_catalog_and_context_from_datasets(datasets, false)
             .await?;
 
         // Delegate to the internal explain method
@@ -366,7 +363,7 @@ impl CypherQuery {
 
         // Build catalog and context from datasets using the helper
         let (catalog, ctx) = self
-            .build_catalog_and_context_from_datasets(datasets)
+            .build_catalog_and_context_from_datasets(datasets, false)
             .await?;
 
         // Generate Logical Plan
@@ -596,7 +593,7 @@ impl CypherQuery {
 
         // Build catalog and context from datasets
         let (catalog, ctx) = self
-            .build_catalog_and_context_from_datasets(datasets)
+            .build_catalog_and_context_from_datasets(datasets, false)
             .await?;
 
         // Delegate to common execution logic
@@ -604,10 +601,87 @@ impl CypherQuery {
             .await
     }
 
+    /// Execute using the Lance native CSR strategy with in-memory datasets.
+    ///
+    /// Installs `CsrQueryPlanner` on the session so that CSR extension nodes in the
+    /// logical plan are lowered to `CsrExpandExec` / `LanceTakeExec` at physical-plan
+    /// time. Unsupported plans (e.g. variable-length paths) fall back automatically to
+    /// the DataFusion join path via `LanceNativePlanner`'s internal delegate.
+    async fn execute_lance_native(
+        &self,
+        datasets: HashMap<String, arrow::record_batch::RecordBatch>,
+    ) -> Result<arrow::record_batch::RecordBatch> {
+        use arrow::compute::concat_batches;
+        use std::sync::Arc;
+
+        // Build catalog and a CSR-enabled session context.
+        let (catalog, ctx) = self
+            .build_catalog_and_context_from_datasets(datasets, true)
+            .await?;
+
+        // Lower the graph logical plan through LanceNativePlanner.
+        let df_logical_plan = self.create_logical_plans_native(Arc::new(catalog))?;
+
+        let df = ctx
+            .execute_logical_plan(df_logical_plan)
+            .await
+            .map_err(|e| GraphError::ExecutionError {
+                message: format!("Failed to execute native plan: {}", e),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            })?;
+        let result_schema = df.schema().inner().clone();
+        let batches = df.collect().await.map_err(|e| GraphError::ExecutionError {
+            message: format!("Failed to collect native results: {}", e),
+            location: snafu::Location::new(file!(), line!(), column!()),
+        })?;
+        if batches.is_empty() {
+            return Ok(arrow::record_batch::RecordBatch::new_empty(result_schema));
+        }
+        concat_batches(&result_schema, &batches).map_err(|e| GraphError::ExecutionError {
+            message: format!("Failed to concat native results: {}", e),
+            location: snafu::Location::new(file!(), line!(), column!()),
+        })
+    }
+
+    /// Build a DataFusion `LogicalPlan` via `LanceNativePlanner`.
+    ///
+    /// Mirrors `create_logical_plans` exactly but uses `LanceNativePlanner` for phase 3
+    /// instead of `DataFusionPlanner`. Unsupported patterns (variable-length paths, etc.)
+    /// are transparently delegated back to the DataFusion join planner.
+    fn create_logical_plans_native(
+        &self,
+        catalog: std::sync::Arc<dyn lance_graph_catalog::GraphSourceCatalog>,
+    ) -> Result<datafusion::logical_expr::LogicalPlan> {
+        use crate::datafusion_planner::GraphPhysicalPlanner;
+        use crate::lance_native_planner::LanceNativePlanner;
+        use crate::semantic::SemanticAnalyzer;
+
+        let config = self.require_config()?;
+
+        // Phase 1: Semantic Analysis
+        let mut analyzer = SemanticAnalyzer::new(config.clone());
+        let semantic = analyzer.analyze(&self.ast, &self.parameters)?;
+        if !semantic.errors.is_empty() {
+            return Err(GraphError::PlanError {
+                message: format!("Semantic analysis failed:\n{}", semantic.errors.join("\n")),
+                location: snafu::Location::new(file!(), line!(), column!()),
+            });
+        }
+
+        // Phase 2: Graph Logical Plan
+        let mut logical_planner = LogicalPlanner::new(config);
+        let logical_plan = logical_planner.plan(&semantic.ast)?;
+
+        // Phase 3: Native DataFusion Logical Plan (with CSR extension nodes where possible)
+        let native = LanceNativePlanner::with_catalog(config.clone(), catalog);
+        native.plan(&logical_plan)
+    }
+
     /// Helper to build catalog and context from in-memory datasets
     async fn build_catalog_and_context_from_datasets(
         &self,
         datasets: HashMap<String, arrow::record_batch::RecordBatch>,
+        native: bool,
     ) -> Result<(
         lance_graph_catalog::InMemoryCatalog,
         datafusion::execution::context::SessionContext,
@@ -624,8 +698,19 @@ impl CypherQuery {
             });
         }
 
-        // Create session context and catalog
-        let ctx = SessionContext::new();
+        // Create session context — with CSR query planner when native=true
+        let ctx = if native {
+            use datafusion::execution::session_state::SessionStateBuilder;
+            let state = SessionStateBuilder::new()
+                .with_default_features()
+                .with_query_planner(Arc::new(
+                    crate::lance_native_planner::CsrQueryPlanner::new(),
+                ))
+                .build();
+            SessionContext::new_with_state(state)
+        } else {
+            SessionContext::new()
+        };
         let mut catalog = InMemoryCatalog::new();
 
         // Register all datasets as tables
