@@ -429,6 +429,9 @@ impl<'a> LogicalPlanner<'a> {
             self.variables
                 .insert(target_variable.clone(), target_label.clone());
 
+            let relationship_types =
+                self.resolve_relationship_types(&segment.relationship.types)?;
+
             // Optimize fixed-length var-length expansions (*1 or *1..1)
             let next_plan = match segment.relationship.length.as_ref() {
                 Some(length_range)
@@ -439,7 +442,7 @@ impl<'a> LogicalPlanner<'a> {
                         source_variable: current_src.clone(),
                         target_variable: target_variable.clone(),
                         target_label: target_label.clone(),
-                        relationship_types: segment.relationship.types.clone(),
+                        relationship_types: relationship_types.clone(),
                         direction: segment.relationship.direction.clone(),
                         relationship_variable: segment.relationship.variable.clone(),
                         properties: segment.relationship.properties.clone(),
@@ -450,7 +453,7 @@ impl<'a> LogicalPlanner<'a> {
                     input: Box::new(plan),
                     source_variable: current_src.clone(),
                     target_variable: target_variable.clone(),
-                    relationship_types: segment.relationship.types.clone(),
+                    relationship_types: relationship_types.clone(),
                     direction: segment.relationship.direction.clone(),
                     relationship_variable: segment.relationship.variable.clone(),
                     min_length: length_range.min,
@@ -462,7 +465,7 @@ impl<'a> LogicalPlanner<'a> {
                     source_variable: current_src.clone(),
                     target_variable: target_variable.clone(),
                     target_label: target_label.clone(),
-                    relationship_types: segment.relationship.types.clone(),
+                    relationship_types: relationship_types.clone(),
                     direction: segment.relationship.direction.clone(),
                     relationship_variable: segment.relationship.variable.clone(),
                     properties: segment.relationship.properties.clone(),
@@ -475,6 +478,35 @@ impl<'a> LogicalPlanner<'a> {
         }
 
         Ok(plan)
+    }
+
+    /// The relationship types a path segment can traverse. A relationship without a type, as in
+    /// `-[]->` or `-[*1..2]->`, can follow any relationship type; that is only supported when
+    /// the graph has a single relationship type.
+    fn resolve_relationship_types(&self, types: &[String]) -> Result<Vec<String>> {
+        if !types.is_empty() {
+            return Ok(types.to_vec());
+        }
+        let mut configured: Vec<&str> = self
+            .config
+            .relationship_mappings
+            .values()
+            .map(|mapping| mapping.relationship_type.as_str())
+            .collect();
+        if let [only] = configured.as_slice() {
+            return Ok(vec![only.to_string()]);
+        }
+        configured.sort_unstable();
+        Err(GraphError::UnsupportedFeature {
+            feature: format!(
+                "Relationships without a type when the graph has {} relationship types ({}); \
+                 specify the type, e.g. -[:{}]->",
+                configured.len(),
+                configured.join(", "),
+                configured.first().copied().unwrap_or("TYPE"),
+            ),
+            location: snafu::Location::new(file!(), line!(), column!()),
+        })
     }
 
     /// Extract the main variable from a logical plan (for chaining)
